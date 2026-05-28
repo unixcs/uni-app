@@ -1,0 +1,11 @@
+/.idea
+/.vscode
+*.log
+.env
+/vendor/
+/runtime/
+/public/temp/
+/public/downloads/
+/public/uploads/.gitignore
+*.Zone.Identifier
+*:Zone.Identifier

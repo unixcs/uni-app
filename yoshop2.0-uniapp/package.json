@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "weixin-js-sdk": "^1.6.0"
+  },
+  "devDependencies": {
+    "vite-plugin-multiple-entries2": "^0.0.1"
+  }
+}

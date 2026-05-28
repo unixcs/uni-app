@@ -1,0 +1,48 @@
+.container {
+  /deep/.ant-card-body {
+    padding-top: 15px;
+  }
+}
+
+// 页面设计工作区
+.work-content {
+  min-width: 1300px;
+  height: calc(100vh - 156px); // 80px + 60px + 16px
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+// 手机预览
+.preview-wrap {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+  margin: 0 10px;
+  padding-bottom: 60px;
+}
+
+// 底部操作栏
+.footer {
+  position: fixed;
+  left: 290px;
+  bottom: 0;
+  right: 15px;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  background: #fff;
+  z-index: 999;
+  box-shadow: 0 0 4px 0 rgba(200, 200, 200, 0.5);
+  padding: 15px 10px;
+
+  &-content {
+    display: flex;
+    justify-content: center;
+  }
+
+  button {
+    height: 30px;
+    font-size: @font-size-base;
+    margin-right: 15px;
+  }
+}

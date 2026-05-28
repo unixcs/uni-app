@@ -1,0 +1,8 @@
+/unpackage
+/node_modules
+/node_modules/
+/dist
+*.Zone.Identifier
+*:Zone.Identifier
+/更新节点.txt
+/待处理.txt
