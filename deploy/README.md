@@ -19,8 +19,9 @@
 3. 进入 `yoshop2.0/` 执行 `composer install`
 4. 导入 `deploy/sql/install.sql`
 5. 导入 `deploy/sql/demo-content.sql`
-6. 配置 Nginx / PHP / MySQL / Redis
-7. 按需安装前端依赖并重新编译：
+6. 如是旧页面装修数据，可执行 `deploy/sql/fix-page-data-relative-paths.sql`
+7. 配置 Nginx / PHP / MySQL / Redis
+8. 按需安装前端依赖并重新编译：
    - `yoshop2.0-uniapp/`
    - `yoshop2.0-store/`
    - `yoshop2.0-admin/`
@@ -29,4 +30,5 @@
 
 - `yoshop2.0/public/uploads/` 已直接包含演示图片。
 - 导入 SQL 后，演示商品与图片记录可直接恢复。
-- 当前页面装修数据中的部分图片 URL 仍为演示域名绝对地址；如更换域名部署，建议导入后在数据库中统一替换为新域名，或在二开时将装修图 URL 改为由后端动态生成。
+- 当前代码已修复页面装修图的存储方式：数据库保存相对路径，接口输出时自动补全当前站点域名。
+- 对旧库可执行 `deploy/sql/fix-page-data-relative-paths.sql` 做一次性清理。

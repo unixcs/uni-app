@@ -45,7 +45,7 @@ class Page extends Controller
         $model = new PageModel;
         return $this->renderSuccess([
             'page' => $model->getDefaultPage(),
-            'items' => $model->getDefaultItems()
+            'items' => $model->normalizePageDataForOutput(['items' => $model->getDefaultItems()])['items']
         ]);
     }
 

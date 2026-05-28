@@ -23,6 +23,9 @@ use app\common\enum\page\PageType as PageTypeEnum;
  */
 class Page extends BaseModel
 {
+    /** @var string[] 需要做图片URL归一化的字段 */
+    private const IMAGE_URL_FIELDS = ['imgUrl', 'image', 'poster', 'goods_image'];
+
     // 定义表名
     protected $name = 'page';
 
@@ -39,7 +42,7 @@ class Page extends BaseModel
         // 数据转义
         $array = helper::jsonDecode(\htmlspecialchars_decode($json));
         // 合并默认数据
-        return $this->mergeDefaultData($array);
+        return $this->normalizePageDataForOutput($this->mergeDefaultData($array));
     }
 
     /**
@@ -49,7 +52,127 @@ class Page extends BaseModel
      */
     public function setPageDataAttr(array $value): string
     {
-        return helper::jsonEncode($value ?: ['items' => []]);
+        return helper::jsonEncode($this->normalizePageDataForStorage($value ?: ['items' => []]));
+    }
+
+    /**
+     * 输出页面数据前，补全相对图片路径为绝对地址
+     * @param array $pageData
+     * @return array
+     */
+    public function normalizePageDataForOutput(array $pageData): array
+    {
+        return $this->walkNormalizeImageUrls($pageData, false);
+    }
+
+    /**
+     * 写入数据库前，将可安全转换的图片绝对地址改为相对路径
+     * @param array $pageData
+     * @return array
+     */
+    public function normalizePageDataForStorage(array $pageData): array
+    {
+        return $this->walkNormalizeImageUrls($pageData, true);
+    }
+
+    /**
+     * 递归处理页面数据中的图片地址
+     * @param mixed $data
+     * @param bool $forStorage true=存库转相对路径 false=输出转绝对路径
+     * @return mixed
+     */
+    private function walkNormalizeImageUrls($data, bool $forStorage)
+    {
+        if (!is_array($data)) {
+            return $data;
+        }
+        foreach ($data as $key => &$value) {
+            if (is_array($value)) {
+                $value = $this->walkNormalizeImageUrls($value, $forStorage);
+                continue;
+            }
+            if (is_string($value) && in_array((string)$key, self::IMAGE_URL_FIELDS, true)) {
+                $value = $forStorage
+                    ? $this->toRelativeAssetPath($value)
+                    : $this->toAbsoluteAssetUrl($value);
+            }
+        }
+        unset($value);
+        return $data;
+    }
+
+    /**
+     * 将站内图片绝对地址转换为相对路径
+     * @param string $url
+     * @return string
+     */
+    private function toRelativeAssetPath(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '' || $this->startsWith($url, 'data:') || $this->startsWith($url, '//')) {
+            return $url;
+        }
+        if ($this->startsWith($url, '/')) {
+            return $url;
+        }
+        if (!preg_match('#^https?://#i', $url)) {
+            return $url;
+        }
+        $parts = parse_url($url);
+        $path = $parts['path'] ?? '';
+        if ($path === '') {
+            return $url;
+        }
+        $rootUrl = rtrim(root_url(), '/');
+        if ($rootUrl !== '' && $rootUrl !== '/' && $this->startsWith($path, $rootUrl . '/')) {
+            $path = substr($path, strlen($rootUrl));
+        }
+        if (preg_match('#^/(uploads|assets|temp)/#i', $path)) {
+            return $path;
+        }
+        return $url;
+    }
+
+    /**
+     * 将相对图片路径转换为绝对地址
+     * @param string $url
+     * @return string
+     */
+    private function toAbsoluteAssetUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '' || $this->startsWith($url, 'data:') || $this->startsWith($url, '//')) {
+            return $url;
+        }
+        if (preg_match('#^https?://#i', $url)) {
+            $parts = parse_url($url);
+            $path = $parts['path'] ?? '';
+            if ($path !== '') {
+                $rootUrl = rtrim(root_url(), '/');
+                if ($rootUrl !== '' && $rootUrl !== '/' && $this->startsWith($path, $rootUrl . '/')) {
+                    $path = substr($path, strlen($rootUrl));
+                }
+                if (preg_match('#^/(uploads|assets|temp)/#i', $path)) {
+                    return rtrim(base_url(), '/') . $path;
+                }
+            }
+            return $url;
+        }
+        if (preg_match('#^/(uploads|assets|temp)/#i', $url)) {
+            return rtrim(base_url(), '/') . $url;
+        }
+        return $url;
+    }
+
+    /**
+     * PHP 7.4 兼容的 startsWith
+     * @param string $haystack
+     * @param string $needle
+     * @return bool
+     */
+    private function startsWith(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strpos($haystack, $needle) === 0;
     }
 
     /**
