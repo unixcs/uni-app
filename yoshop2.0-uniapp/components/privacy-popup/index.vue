@@ -50,11 +50,16 @@
 
     async created() {
       // 获取商城基本信息
-      await this.getStoreInfo()
-      // #ifdef MP-WEIXIN
-      // 弹出隐私协议 (微信小程序端)
-      this.needAuthorization()
-      // #endif
+      try {
+        await this.getStoreInfo()
+        // #ifdef MP-WEIXIN
+        // 弹出隐私协议 (微信小程序端)
+        this.needAuthorization()
+        // #endif
+      } catch (err) {
+        console.error('隐私弹窗初始化失败', err)
+        this.$emit('end')
+      }
     },
 
     methods: {
@@ -70,6 +75,11 @@
 
       // 弹出隐私协议 (微信小程序端)
       needAuthorization() {
+        if (typeof uni.getPrivacySetting !== 'function') {
+          console.warn('当前环境不支持 getPrivacySetting，跳过隐私授权弹窗')
+          this.$emit('end')
+          return
+        }
         const app = this
         uni.getPrivacySetting({
           success({ needAuthorization, privacyContractName }) {
@@ -84,6 +94,7 @@
           },
           fail(err) {
             console.error('getPrivacySetting 调用失败', err)
+            app.$emit('end')
           }
         })
       },

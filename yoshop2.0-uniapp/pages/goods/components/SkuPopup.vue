@@ -3,7 +3,7 @@
     :maskCloseAble="true" :priceColor="appTheme.mainBg" :buyNowBackgroundColor="appTheme.mainBg" :addCartColor="appTheme.viceText"
     :addCartBackgroundColor="appTheme.viceBg"
     :activedStyle="{ color: appTheme.mainBg, borderColor: appTheme.mainBg, backgroundColor: activedBtnBackgroundColor }"
-    @open="openSkuPopup" @close="closeSkuPopup" @add-cart="addCart" @buy-now="buyNow" buyNowText="立即购买" :maxBuyNum="maxBuyNum" />
+    @open="openSkuPopup" @close="closeSkuPopup" @add-cart="addCart" @buy-now="buyNow" buyNowText="立即下单" :maxBuyNum="maxBuyNum" />
 </template>
 
 <script>
@@ -167,8 +167,10 @@
 
       // 立即购买
       buyNow(selectShop) {
+        const scene = this.goods.is_service_package ? 'service' : ''
         // 跳转到订单结算页
         this.$navTo('pages/checkout/index', {
+          scene,
           mode: 'buyNow',
           goodsId: selectShop.goods_id,
           goodsSkuId: selectShop.goods_sku_id,

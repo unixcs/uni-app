@@ -17,8 +17,10 @@ use app\common\service\Order as OrderService;
 use app\common\enum\order\PayStatus as PayStatusEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
+use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use app\common\enum\order\ReceiptStatus as ReceiptStatusEnum;
 use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
+use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\library\helper;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\DbException;
@@ -52,6 +54,9 @@ class Order extends BaseModel
      */
     protected $append = [
         'state_text',   // 售后单状态文字描述
+        'contact_name',
+        'contact_mobile',
+        'time_preference',
     ];
 
     /**
@@ -122,24 +127,97 @@ class Order extends BaseModel
      */
     public function getStateTextAttr($value, $data): string
     {
-        // 订单状态
-        if ($data['order_status'] != OrderStatusEnum::NORMAL) {
-            return OrderStatusEnum::data()[$data['order_status']]['name'];
+        if (!static::isServiceOrderData($data)) {
+            return $this->getPhysicalOrderStateText($value, $data);
         }
-        // 付款状态
+        // 服务单状态映射（兼容旧订单状态）
+        if ($data['order_status'] == OrderStatusEnum::COMPLETED) {
+            return '已完成';
+        }
+        if ($data['order_status'] == OrderStatusEnum::CANCELLED) {
+            return $data['pay_status'] == PayStatusEnum::SUCCESS ? '已退款' : '已关闭';
+        }
+        if ($data['order_status'] == OrderStatusEnum::APPLY_CANCEL) {
+            return $data['pay_status'] == PayStatusEnum::SUCCESS ? '退款处理中' : '待退款';
+        }
+        if ($this->hasActiveRefundState($data)) {
+            return '退款处理中';
+        }
         if ($data['pay_status'] == PayStatusEnum::PENDING) {
             return '待支付';
         }
-        // 发货状态
-        if ($data['delivery_status'] != DeliveryStatusEnum::DELIVERED) {
-            $enum = [DeliveryStatusEnum::NOT_DELIVERED => '待发货', DeliveryStatusEnum::PART_DELIVERED => '部分发货'];
-            return $enum[$data['delivery_status']];
+        if ($data['pay_status'] == PayStatusEnum::SUCCESS && $data['delivery_status'] == DeliveryStatusEnum::NOT_DELIVERED) {
+            return '待联系';
         }
-        // 收货状态
-        if ($data['receipt_status'] == ReceiptStatusEnum::NOT_RECEIVED) {
+        if (
+            $data['pay_status'] == PayStatusEnum::SUCCESS
+            && $data['delivery_status'] == DeliveryStatusEnum::DELIVERED
+            && $data['receipt_status'] == ReceiptStatusEnum::NOT_RECEIVED
+        ) {
+            return '服务中';
+        }
+        if ($data['order_status'] != OrderStatusEnum::NORMAL) {
+            return OrderStatusEnum::data()[$data['order_status']]['name'];
+        }
+        return $value ?: '服务中';
+    }
+
+    /**
+     * 获取实物订单状态文案
+     * @param string $value
+     * @param array $data
+     * @return string
+     */
+    private function getPhysicalOrderStateText($value, array $data): string
+    {
+        $value = (string)$value;
+        if ($data['order_status'] == OrderStatusEnum::COMPLETED) {
+            return '已完成';
+        }
+        if ($data['order_status'] == OrderStatusEnum::CANCELLED) {
+            return $data['pay_status'] == PayStatusEnum::SUCCESS ? '已退款' : '已关闭';
+        }
+        if ($data['order_status'] == OrderStatusEnum::APPLY_CANCEL) {
+            return $data['pay_status'] == PayStatusEnum::SUCCESS ? '退款处理中' : '待退款';
+        }
+        if ($this->hasActiveRefundState($data)) {
+            return '退款处理中';
+        }
+        if ($data['pay_status'] == PayStatusEnum::PENDING) {
+            return '待支付';
+        }
+        if ($data['pay_status'] == PayStatusEnum::SUCCESS && $data['delivery_status'] == DeliveryStatusEnum::NOT_DELIVERED) {
+            return '待发货';
+        }
+        if (
+            $data['pay_status'] == PayStatusEnum::SUCCESS
+            && $data['delivery_status'] == DeliveryStatusEnum::DELIVERED
+            && $data['receipt_status'] == ReceiptStatusEnum::NOT_RECEIVED
+        ) {
             return '待收货';
         }
-        return $value;
+        return $value ?: '待处理';
+    }
+
+    /**
+     * 是否存在进行中的退款（优先使用已加载关联，其次回查主表）
+     * @param array $data
+     * @return bool
+     */
+    private function hasActiveRefundState(array $data): bool
+    {
+        foreach (($this['goods'] ?? []) as $goods) {
+            if (!empty($goods['refund']) && (int)$goods['refund']['status'] === 0) {
+                return true;
+            }
+        }
+        if (empty($data['order_id'])) {
+            return false;
+        }
+        return (new OrderRefund)->where('order_id', '=', (int)$data['order_id'])
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('status', '=', 0)
+            ->count() > 0;
     }
 
     /**
@@ -218,6 +296,81 @@ class Order extends BaseModel
     public function setOrderSourceDataAttr(array $data): string
     {
         return helper::jsonEncode($data);
+    }
+
+    /**
+     * 获取器：服务联系人
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getContactNameAttr($value, $data): string
+    {
+        return $this->getServiceContactField($data, 'contact_name');
+    }
+
+    /**
+     * 获取器：服务联系电话
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getContactMobileAttr($value, $data): string
+    {
+        return $this->getServiceContactField($data, 'contact_mobile');
+    }
+
+    /**
+     * 获取器：时间偏好
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getTimePreferenceAttr($value, $data): string
+    {
+        return $this->getServiceContactField($data, 'time_preference');
+    }
+
+    /**
+     * 获取服务联系信息字段
+     * @param array $data
+     * @param string $field
+     * @return string
+     */
+    private function getServiceContactField(array $data, string $field): string
+    {
+        $serviceContact = static::getServiceContactData($data);
+        return (string)($serviceContact[$field] ?? '');
+    }
+
+    /**
+     * 获取服务联系人信息
+     * @param array|self $order
+     * @return array
+     */
+    public static function getServiceContactData($order): array
+    {
+        $sourceData = $order['order_source_data'] ?? [];
+        if (is_string($sourceData)) {
+            $sourceData = helper::jsonDecode($sourceData) ?: [];
+        }
+        return (array)($sourceData['service_contact'] ?? []);
+    }
+
+    /**
+     * 是否为服务订单
+     * @param array|self $order
+     * @return bool
+     */
+    public static function isServiceOrderData($order): bool
+    {
+        if ((int)($order['delivery_type'] ?? 0) === DeliveryTypeEnum::NOTHING) {
+            return true;
+        }
+        $serviceContact = static::getServiceContactData($order);
+        return !empty($serviceContact['contact_name'])
+            || !empty($serviceContact['contact_mobile'])
+            || !empty($serviceContact['time_preference']);
     }
 
     /**

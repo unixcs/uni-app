@@ -14,9 +14,12 @@ namespace app\api\model;
 
 use app\api\model\GoodsSku as GoodsSkuModel;
 use app\api\model\GoodsSpecRel as GoodsSpecRelModel;
+use app\api\model\goods\ServiceRel as GoodsServiceRelModel;
 use app\api\service\Goods as GoodsService;
 use app\api\service\user\Grade as UserGradeService;
 use app\common\enum\goods\Status as GoodsStatusEnum;
+use app\common\enum\order\OrderType as OrderTypeEnum;
+use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use app\common\model\Goods as GoodsModel;
 use cores\exception\BaseException;
 use think\db\exception\DataNotFoundException;
@@ -234,7 +237,24 @@ class Goods extends GoodsModel
         return $this->setGoodsData($goodsInfo, function ($goods) {
             // 计算并设置商品会员价
             $this->getEnableGradeMoney() && $this->setGoodsGradeMoney($goods);
+            $goods['is_service_package'] = $this->isServicePackageGoods($goods);
         });
+    }
+
+    /**
+     * 判断商品是否具备服务套餐资格
+     * @param mixed $goods
+     * @return bool
+     */
+    private function isServicePackageGoods($goods): bool
+    {
+        if ((int)$goods['goods_type'] === OrderTypeEnum::PHYSICAL) {
+            return false;
+        }
+        if (empty(GoodsServiceRelModel::getServiceIds((int)$goods['goods_id']))) {
+            return false;
+        }
+        return in_array(DeliveryTypeEnum::NOTHING, (array)($goods['delivery_type'] ?? []));
     }
 
     /**

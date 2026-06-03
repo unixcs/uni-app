@@ -39,6 +39,11 @@
       <view class="login-button" :class="{ disabled }" @click="handleLogin()">
         <text>登录</text>
       </view>
+      <!-- #ifdef H5 -->
+      <view v-if="isDebugH5Login" class="debug-login-button" :class="{ disabled }" @click="handleDebugLogin()">
+        <text>调试登录</text>
+      </view>
+      <!-- #endif -->
     </view>
 
     <!-- 微信授权手机号一键登录 -->
@@ -54,6 +59,7 @@
   import * as CaptchaApi from '@/api/captcha'
   import * as Verify from '@/utils/verify'
   import MpWeixinMobile from './mp-weixin-mobile'
+  import Config from '@/core/config'
 
   // 倒计时时长(秒)
   const times = 60
@@ -101,7 +107,9 @@
         // 图形验证码
         captchaCode: '',
         // 短信验证码
-        smsCode: ''
+        smsCode: '',
+        // H5调试登录入口
+        isDebugH5Login: false
       }
     },
 
@@ -111,6 +119,8 @@
     created() {
       // 获取图形验证码
       this.getCaptcha()
+      // H5调试登录入口（本地配置控制）
+      this.isDebugH5Login = Boolean(Config.get('debugH5Login', false))
     },
 
     methods: {
@@ -247,6 +257,34 @@
           .finally(() => app.isLoading = false)
       },
 
+      // H5调试登录
+      handleDebugLogin() {
+        const app = this
+        if (!app.isLoading && !app.disabled && app.isDebugH5Login) {
+          app.submitDebugLogin()
+        }
+      },
+
+      // 确认调试登录
+      submitDebugLogin() {
+        const app = this
+        app.isLoading = true
+        app.disabled = true
+        store.dispatch('LoginDebug')
+          .then(result => {
+            // 显示登录成功
+            app.$toast(result.message)
+            // 相应全局事件订阅: 刷新上级页面数据
+            uni.$emit('syncRefresh', true)
+            // 跳转回原页面
+            setTimeout(() => app.onNavigateBack(), 2000)
+          })
+          .catch(() => {
+            app.disabled = false
+          })
+          .finally(() => app.isLoading = false)
+      },
+
       /**
        * 登录成功-跳转回原页面
        */
@@ -351,6 +389,22 @@
     align-items: center;
 
     // 禁用按钮
+    &.disabled {
+      opacity: 0.6;
+    }
+  }
+
+  .debug-login-button {
+    width: 100%;
+    height: 86rpx;
+    margin-top: 24rpx;
+    background: #f5f5f5;
+    color: #666;
+    border-radius: 80rpx;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
     &.disabled {
       opacity: 0.6;
     }

@@ -4,13 +4,13 @@
       @up="upCallback">
       <!-- tab栏 -->
       <u-tabs :list="tabs" :is-scroll="false" v-model="curTab" :active-color="appTheme.mainBg" :duration="0.2" @change="onChangeTab" />
-      <!-- 退款/售后单 -->
+      <!-- 退款单 -->
       <view class="widget-list">
         <view class="widget-detail" v-for="(item, index) in list.data" :key="index">
           <view class="row-block dis-flex flex-y-center">
             <view class="flex-box">{{ item.create_time }}</view>
             <view class="flex-box t-r">
-              <text class="col-m">{{ item.state_text }}</text>
+              <text class="col-m">{{ item.service_state_text }}</text>
             </view>
           </view>
           <view class="detail-goods row-block dis-flex" @click.stop="handleTargetDetail(item.order_refund_id)">
@@ -33,8 +33,8 @@
           </view>
           <view class="detail-order row-block">
             <view class="item dis-flex flex-x-end flex-y-center">
-              <text class="">付款金额：</text>
-              <text class="col-m">￥{{ item.orderGoods.total_pay_price }}</text>
+              <text class="">退款金额：</text>
+              <text class="col-m">￥{{ item.refund_money || item.orderGoods.total_pay_price }}</text>
             </view>
           </view>
           <view class="detail-operate row-block dis-flex flex-x-end flex-y-center">
@@ -83,7 +83,7 @@
           noMoreSize: 2,
           // 空布局
           empty: {
-            tip: '亲，暂无售后单记录'
+            tip: '亲，暂无退款记录'
           }
         },
         // 控制首次触发onShow事件时不刷新列表
@@ -125,7 +125,7 @@
           .catch(() => app.mescroll.endErr())
       },
 
-      // 获取退款/售后单列表
+      // 获取退款单列表
       getRefundList(pageNo = 1) {
         const app = this
         return new Promise((resolve, reject) => {
@@ -144,7 +144,7 @@
         const app = this
         // 设置当前选中的标签
         app.curTab = index
-        // 刷新售后单列表
+        // 刷新退款单列表
         app.onRefreshList()
       },
 
@@ -161,7 +161,7 @@
         return this.tabs[this.curTab].value
       },
 
-      // 跳转到售后单详情页
+      // 跳转到退款单详情页
       handleTargetDetail(orderRefundId) {
         this.$navTo('pages/refund/detail', { orderRefundId })
       },

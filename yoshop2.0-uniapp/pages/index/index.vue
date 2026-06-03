@@ -1,7 +1,10 @@
 <template>
   <view class="container" :style="appThemeStyle">
+    <view v-if="isLoading" class="debug-state debug-loading debug-loading-center">
+      首页加载中...
+    </view>
     <!-- 店铺页面组件 -->
-    <Page :items="items" />
+    <Page v-if="!isLoading && items.length" :items="items" />
     <view v-if="!isLoading && errorText" class="debug-state debug-error">
       {{ errorText }}
     </view>
@@ -10,7 +13,7 @@
     </view>
     <!-- 用户隐私保护提示（仅微信小程序） -->
     <!-- #ifdef MP-WEIXIN -->
-    <PrivacyPopup :hideTabBar="true" />
+    <PrivacyPopup v-if="!isLoading" :hideTabBar="true" />
     <!-- #endif -->
   </view>
 </template>
@@ -39,7 +42,9 @@
         // 加载状态
         isLoading: true,
         // 错误提示
-        errorText: ''
+        errorText: '',
+        // 加载超时计时器
+        loadingTimer: null
       }
     },
 
@@ -72,6 +77,16 @@
         const pageId = app.options.pageId || 0
         app.isLoading = true
         app.errorText = ''
+        if (app.loadingTimer) {
+          clearTimeout(app.loadingTimer)
+        }
+        app.loadingTimer = setTimeout(() => {
+          if (app.isLoading) {
+            app.items = []
+            app.errorText = '首页加载超时，请检查接口或网络'
+            app.isLoading = false
+          }
+        }, 5000)
         Api.detail(pageId)
           .then(result => {
             console.info('首页 page/detail 返回', result)
@@ -88,6 +103,10 @@
             app.errorText = '首页加载失败，请看控制台或网络请求'
           })
           .finally(() => {
+            if (app.loadingTimer) {
+              clearTimeout(app.loadingTimer)
+              app.loadingTimer = null
+            }
             app.isLoading = false
             callback && callback()
           })
@@ -171,6 +190,21 @@
   .debug-error {
     color: #b42318;
     background: #fef3f2;
+  }
+
+  .debug-loading {
+    color: #475467;
+    background: #f8fafc;
+  }
+
+  .debug-loading-center {
+    min-height: 180rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32rpx;
+    color: #111827;
+    font-weight: 600;
   }
 
   .debug-empty {

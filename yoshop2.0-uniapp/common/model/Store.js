@@ -23,7 +23,7 @@ const getApiData = () => {
       // 初始化商城数据
       initStoreData(result.data)
       resolve(result.data)
-    })
+    }).catch(reject)
   })
 }
 
@@ -49,7 +49,7 @@ const data = (isCache = true) => {
     } else {
       getApiData().then(data => {
         resolve(data)
-      })
+      }).catch(reject)
     }
   })
 }
@@ -57,7 +57,7 @@ const data = (isCache = true) => {
 // 获取商城基本信息
 const storeInfo = () => {
   return new Promise((resolve, reject) => {
-    data().then(data => resolve(data.storeInfo))
+    data().then(data => resolve(data.storeInfo)).catch(reject)
   })
 }
 
@@ -67,7 +67,7 @@ const h5Url = () => {
     data().then(data => {
       const h5Url = data.clientData.h5.setting.baseUrl
       resolve(h5Url)
-    })
+    }).catch(reject)
   })
 }
 

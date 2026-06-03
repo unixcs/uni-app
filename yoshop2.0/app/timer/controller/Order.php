@@ -40,8 +40,6 @@ class Order extends BaseTimer
             echo $this->taskKey . PHP_EOL;
             // 未支付订单自动关闭
             $this->closeEvent();
-            // 已发货订单自动确认收货
-            $this->receiveEvent();
             // 已完成订单结算
             $this->settledEvent();
         });
@@ -61,24 +59,6 @@ class Order extends BaseTimer
         if ($closeHours > 0) {
             $service = new OrderService;
             $service->closeEvent($this->storeId, $closeHours);
-        }
-    }
-
-    /**
-     * 自动确认收货订单的天数
-     * @throws \think\Exception
-     * @throws \think\db\exception\DataNotFoundException
-     * @throws \think\db\exception\DbException
-     * @throws \think\db\exception\ModelNotFoundException
-     */
-    private function receiveEvent()
-    {
-        // 取消n天以前的的未付款订单
-        $receiveDays = (int)$this->getTradeSetting()['receive_days'];
-        // 执行自动确认收货
-        if ($receiveDays > 0) {
-            $service = new OrderService;
-            $service->receiveEvent($this->storeId, $receiveDays);
         }
     }
 

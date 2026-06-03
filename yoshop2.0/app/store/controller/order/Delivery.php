@@ -25,15 +25,18 @@ use app\store\service\order\Delivery as DeliveryService;
  */
 class Delivery extends Controller
 {
+    private function disabled(): Json
+    {
+        return $this->renderError('服务订单不支持发货和物流管理');
+    }
+
     /**
      * 订单发货记录
      * @return Json
      */
     public function list(): Json
     {
-        $model = new DeliveryModel;
-        $list = $model->getList($this->request->param());
-        return $this->renderSuccess(compact('list'));
+        return $this->disabled();
     }
 
     /**
@@ -43,8 +46,7 @@ class Delivery extends Controller
      */
     public function detail(int $deliveryId): Json
     {
-        $detail = DeliveryModel::detail($deliveryId);
-        return $this->renderSuccess(compact('detail'));
+        return $this->disabled();
     }
 
     /**
@@ -54,11 +56,7 @@ class Delivery extends Controller
      */
     public function delivery(int $orderId): Json
     {
-        $service = new DeliveryService;
-        if ($service->delivery($orderId, $this->postForm())) {
-            return $this->renderSuccess('发货成功');
-        }
-        return $this->renderError($service->getError() ?: '发货失败');
+        return $this->disabled();
     }
 
     /**
@@ -72,8 +70,6 @@ class Delivery extends Controller
      */
     public function traces(int $deliveryId): Json
     {
-        $model = new DeliveryModel;
-        $traces = $model->getExpressTraces($deliveryId);
-        return $this->renderSuccess(compact('traces'));
+        return $this->disabled();
     }
 }

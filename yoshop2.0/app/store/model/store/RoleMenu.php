@@ -12,6 +12,7 @@ declare (strict_types=1);
 
 namespace app\store\model\store;
 
+use app\common\model\store\Menu as MenuModel;
 use app\common\model\store\RoleMenu as RoleMenuModel;
 
 /**
@@ -87,6 +88,7 @@ class RoleMenu extends RoleMenuModel
      */
     public static function getMenuIds(array $roleIds): array
     {
-        return (new self)->where('role_id', 'in', $roleIds)->column('menu_id');
+        $menuIds = (new self)->where('role_id', 'in', $roleIds)->column('menu_id');
+        return array_values(array_diff($menuIds, MenuModel::getLegacyDeliveryMenuIds()));
     }
 }

@@ -32,4 +32,22 @@ class MenuApi extends BaseModel
     // 不允许全局查询store_id
     protected bool $isGlobalScopeStoreId = false;
 
+    /**
+     * 旧版物理商品发货API路径前缀
+     * @return array
+     */
+    public static function getLegacyDeliveryApiPrefixes(): array
+    {
+        return ['/order.delivery', '/order.tools.delivery'];
+    }
+
+    /**
+     * 旧版物理商品发货API ID集
+     * @return array
+     */
+    public static function getLegacyDeliveryApiIds(): array
+    {
+        return [11318, 11319, 11320, 11321, 11322, 11367];
+    }
+
 }

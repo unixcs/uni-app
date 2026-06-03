@@ -5,13 +5,13 @@
       <!-- 搜索板块 -->
       <a-row class="row-item-search">
         <a-form class="search-form" :form="searchForm" layout="inline" @submit="handleSearch">
-          <a-form-item label="商品名称">
-            <a-input v-decorator="['goodsName']" placeholder="请输入商品名称" />
+          <a-form-item label="服务名称">
+            <a-input v-decorator="['goodsName']" placeholder="请输入服务名称" />
           </a-form-item>
-          <a-form-item label="商品编码">
-            <a-input v-decorator="['goodsNo']" placeholder="请输入商品编码" />
+          <a-form-item label="服务编码">
+            <a-input v-decorator="['goodsNo']" placeholder="请输入服务编码" />
           </a-form-item>
-          <a-form-item label="商品分类">
+          <a-form-item label="服务分类">
             <a-tree-select
               :treeData="categoryListTree"
               :dropdownStyle="{ maxHeight: '500px', overflow: 'auto' }"
@@ -40,7 +40,7 @@
           type="primary"
           icon="plus"
           @click="handleCreate()"
-        >创建商品</a-button>
+        >创建服务套餐</a-button>
         <div v-if="selectedRowKeys.length" class="button-group">
           <a-button-group class="ml-10">
             <a-button
@@ -68,17 +68,17 @@
       :pageSize="15"
       :scroll="{ x: 1450 }"
     >
-      <!-- 商品图片 -->
+      <!-- 服务封面 -->
       <span slot="goods_image" slot-scope="text">
         <a title="点击查看原图" :href="text" target="_blank">
-          <img width="50" height="50" :src="text" alt="商品图片" />
+          <img width="50" height="50" :src="text" alt="服务封面" />
         </a>
       </span>
-      <!-- 商品名称 -->
+      <!-- 服务名称 -->
       <span slot="goods_name" slot-scope="text">
         <p class="twoline-hide" style="width: 270px;">{{ text }}</p>
       </span>
-      <!-- 商品价格 -->
+      <!-- 服务价格 -->
       <span slot="goods_price_min" slot-scope="text">
         <span class="c-p">¥{{ text }}</span>
       </span>
@@ -110,22 +110,22 @@ import CategoryModel from '@/common/model/Category'
 // 表格表头
 const columns = [
   {
-    title: '商品ID',
+    title: '服务ID',
     dataIndex: 'goods_id'
   },
   {
-    title: '商品图片',
+    title: '服务封面',
     dataIndex: 'goods_image',
     scopedSlots: { customRender: 'goods_image' }
   },
   {
-    title: '商品名称',
+    title: '服务名称',
     dataIndex: 'goods_name',
     width: '302px',
     scopedSlots: { customRender: 'goods_name' }
   },
   {
-    title: '商品价格',
+    title: '服务价格',
     dataIndex: 'goods_price_min',
     scopedSlots: { customRender: 'goods_price_min' }
   },

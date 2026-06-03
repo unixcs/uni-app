@@ -28,6 +28,11 @@ use cores\exception\BaseException;
 class Passport extends Controller
 {
     /**
+     * 调试测试身份手机号（仅本地调试登录使用）
+     */
+    private const DEBUG_TEST_MOBILE = LoginService::DEBUG_TEST_MOBILE;
+
+    /**
      * 登录接口 (需提交手机号、短信验证码、第三方用户信息)
      * @return Json
      * @throws BaseException
@@ -48,6 +53,32 @@ class Passport extends Controller
         return $this->renderSuccess([
             'userId' => (int)$userInfo['user_id'],
             'token' => $LoginService->getToken((int)$userInfo['user_id'])
+        ], '登录成功');
+    }
+
+    /**
+     * 调试登录接口（仅 debug 环境可用）
+     * @return Json
+     * @throws BaseException
+     * @throws \think\Exception
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public function loginDebug(): Json
+    {
+        if (!is_debug()) {
+            return $this->renderError('当前接口仅调试环境可用');
+        }
+        $LoginService = new LoginService;
+        if (!$LoginService->loginDebug()) {
+            return $this->renderError($LoginService->getError());
+        }
+        $userInfo = $LoginService->getUserInfo();
+        return $this->renderSuccess([
+            'userId' => (int)$userInfo['user_id'],
+            'token' => $LoginService->getToken((int)$userInfo['user_id']),
+            'mobile' => self::DEBUG_TEST_MOBILE,
         ], '登录成功');
     }
 

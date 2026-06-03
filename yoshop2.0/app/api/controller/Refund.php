@@ -85,11 +85,6 @@ class Refund extends Controller
      */
     public function delivery(int $orderRefundId): Json
     {
-        // 售后单详情
-        $model = OrderRefundModel::getDetail($orderRefundId, false);
-        if ($model->delivery($this->postForm())) {
-            return $this->renderSuccess([], '操作成功');
-        }
-        return $this->renderError($model->getError() ?: '提交失败');
+        return $this->renderError('当前退款单不支持物流发货');
     }
 }

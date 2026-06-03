@@ -73,12 +73,7 @@ class Order extends Controller
      */
     public function express(int $orderId): Json
     {
-        // 订单详情 (用于验证当前登录用户)
-        $order = OrderModel::getDetail($orderId);
-        // 获取物流信息
-        $service = new OrderService;
-        $express = $service->express($orderId);
-        return $this->renderSuccess(compact('express'));
+        return $this->renderError('服务订单不支持物流信息');
     }
 
     /**
@@ -104,11 +99,7 @@ class Order extends Controller
      */
     public function receipt(int $orderId): Json
     {
-        $model = OrderModel::getDetail($orderId);
-        if ($model->receipt()) {
-            return $this->renderSuccess('确认收货成功');
-        }
-        return $this->renderError($model->getError());
+        return $this->renderError('服务订单不支持确认收货');
     }
 
     /**

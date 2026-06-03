@@ -24,10 +24,16 @@ class DataType extends EnumBasics
     // 全部
     const ALL = 'all';
 
-    // 待发货
+    // 待联系
+    const CONTACT = 'contact';
+
+    // 服务中
     const DELIVERY = 'delivery';
 
-    // 待收货
+    // 服务中（服务语义主key）
+    const IN_SERVICE = 'in_service';
+
+    // 待收货(旧兼容)
     const RECEIPT = 'receipt';
 
     // 待付款
@@ -36,11 +42,14 @@ class DataType extends EnumBasics
     // 已完成
     const COMPLETE = 'complete';
 
-    // 待取消
+    // 退款处理中
     const APPLY_CANCEL = 'apply_cancel';
 
-    // 已取消
+    // 已关闭/已取消
     const CANCEL = 'cancel';
+
+    // 已退款
+    const REFUND = 'refund';
 
     /**
      * 获取枚举数据
@@ -54,8 +63,16 @@ class DataType extends EnumBasics
                 'value' => self::ALL,
             ],
             self::DELIVERY => [
-                'name' => '待发货',
+                'name' => '服务中',
                 'value' => self::DELIVERY,
+            ],
+            self::IN_SERVICE => [
+                'name' => '服务中',
+                'value' => self::IN_SERVICE,
+            ],
+            self::CONTACT => [
+                'name' => '待联系',
+                'value' => self::CONTACT,
             ],
             self::RECEIPT => [
                 'name' => '待收货',
@@ -70,12 +87,16 @@ class DataType extends EnumBasics
                 'value' => self::COMPLETE,
             ],
             self::APPLY_CANCEL => [
-                'name' => '待取消',
+                'name' => '退款处理中',
                 'value' => self::APPLY_CANCEL,
             ],
             self::CANCEL => [
-                'name' => '已取消',
+                'name' => '已关闭',
                 'value' => self::CANCEL,
+            ],
+            self::REFUND => [
+                'name' => '已退款',
+                'value' => self::REFUND,
             ],
         ];
     }

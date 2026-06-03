@@ -39,6 +39,12 @@ class Checkout extends Controller
      */
     public function order(string $mode = 'buyNow'): Json
     {
+        if ($this->isInvalidServiceScene($mode)) {
+            return $this->renderError('服务订单仅支持立即购买');
+        }
+        if ($mode === 'cart') {
+            return $this->renderError('服务订单不支持购物车结算');
+        }
         if ($mode === 'buyNow') {
             return $this->buyNow();
         } elseif ($mode === 'cart') {
@@ -59,6 +65,16 @@ class Checkout extends Controller
     public function submit(string $mode = 'buyNow'): Json
     {
         return $this->order($mode);
+    }
+
+    /**
+     * 是否为非法的服务订单结算场景
+     * @param string $mode
+     * @return bool
+     */
+    private function isInvalidServiceScene(string $mode): bool
+    {
+        return $this->request->param('scene') === 'service' && $mode !== 'buyNow';
     }
 
     /**
@@ -121,37 +137,7 @@ class Checkout extends Controller
      */
     private function cart(): Json
     {
-        // 实例化结算台服务
-        $Checkout = new CheckoutService;
-        // 订单结算api参数
-        $params = $Checkout->setParam($this->getParam());
-        // 购物车ID集
-        $cartIds = $this->getCartIds();
-        // 商品结算信息
-        $CartModel = new CartService;
-        // 购物车商品列表
-        $goodsList = $CartModel->getOrderGoodsList($cartIds);
-        // 获取订单结算信息
-        $orderInfo = $Checkout->onCheckout($goodsList);
-        if ($this->request->isGet()) {
-            return $this->renderSuccess([
-                'order' => $orderInfo,
-                'personal' => $Checkout->getPersonal(),
-                'setting' => $Checkout->getSetting(),
-            ]);
-        }
-        // 验证订单是否存在错误
-        if ($Checkout->hasError()) {
-            return $this->renderError($Checkout->getError(), ['isCreated' => false]);
-        }
-        // 创建订单
-        if (!$Checkout->createOrder($orderInfo)) {
-            return $this->renderError($Checkout->getError() ?: '订单创建失败');
-        }
-        // 移出购物车中已下单的商品
-        $CartModel->clear($cartIds);
-        // 返回状态
-        return $this->renderSuccess(['orderId' => $Checkout->model['order_id']], '订单创建成功');
+        return $this->renderError('服务订单不支持购物车结算');
     }
 
     /**
@@ -185,4 +171,5 @@ class Checkout extends Controller
     {
         return \array_merge($define, $this->request->param());
     }
+
 }

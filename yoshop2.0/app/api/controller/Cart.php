@@ -24,6 +24,11 @@ use cores\exception\BaseException;
  */
 class Cart extends Controller
 {
+    private function disabled(): Json
+    {
+        return $this->renderError('服务订单不支持购物车');
+    }
+
     /**
      * 购物车商品列表
      * @return Json
@@ -35,12 +40,7 @@ class Cart extends Controller
      */
     public function list(): Json
     {
-        // 购物车商品列表
-        $service = new CartService;
-        $list = $service->getList();
-        // 购物车商品总数量
-        $cartTotal = (new CartModel)->getCartTotal();
-        return $this->renderSuccess(compact('cartTotal', 'list'));
+        return $this->disabled();
     }
 
     /**
@@ -50,9 +50,7 @@ class Cart extends Controller
      */
     public function total(): Json
     {
-        $model = new CartModel;
-        $cartTotal = $model->getCartTotal();
-        return $this->renderSuccess(compact('cartTotal'));
+        return $this->disabled();
     }
 
     /**
@@ -68,13 +66,7 @@ class Cart extends Controller
      */
     public function add(int $goodsId, string $goodsSkuId, int $goodsNum): Json
     {
-        $model = new CartModel;
-        if (!$model->add($goodsId, $goodsSkuId, $goodsNum)) {
-            return $this->renderError($model->getError() ?: '加入购物车失败');
-        }
-        // 购物车商品总数量
-        $cartTotal = $model->getCartTotal();
-        return $this->renderSuccess(compact('cartTotal'), '加入购物车成功');
+        return $this->disabled();
     }
 
     /**
@@ -90,13 +82,7 @@ class Cart extends Controller
      */
     public function update(int $goodsId, string $goodsSkuId, int $goodsNum): Json
     {
-        $model = new CartModel;
-        if (!$model->sUpdate($goodsId, $goodsSkuId, $goodsNum)) {
-            return $this->renderError($model->getError() ?: '更新失败');
-        }
-        // 购物车商品总数量
-        $cartTotal = $model->getCartTotal();
-        return $this->renderSuccess(compact('cartTotal'), '更新成功');
+        return $this->disabled();
     }
 
     /**
@@ -107,12 +93,6 @@ class Cart extends Controller
      */
     public function clear(array $cartIds = []): Json
     {
-        $model = new CartModel;
-        if (!$model->clear($cartIds)) {
-            return $this->renderError($model->getError() ?: '操作失败');
-        }
-        // 购物车商品总数量
-        $cartTotal = $model->getCartTotal();
-        return $this->renderSuccess(compact('cartTotal'), '操作成功');
+        return $this->disabled();
     }
 }

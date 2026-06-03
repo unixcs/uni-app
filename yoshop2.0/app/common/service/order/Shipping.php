@@ -48,25 +48,7 @@ class Shipping extends BaseService
      */
     public function syncMpWeixinShipping($completed, array $param): bool
     {
-        // 构建发货信息参数
-        $param = $this->buildParam($completed, $param);
-        // 仅微信小程序端并且使用微信支付的订单才可以同步
-        if (
-            !$param['syncMpWeixinShipping']
-            || $completed['pay_method'] !== PaymentMethodEnum::WECHAT
-            || $completed['platform'] !== ClientEnum::MP_WEIXIN
-        ) {
-            return false;
-        }
-        // 订单全部发货时再同步, 分包发货时不同步
-        if ($completed['delivery_status'] !== DeliveryStatusEnum::DELIVERED) {
-            return false;
-        }
-        if (empty($completed['trade'])) {
-            throwError('很抱歉，该订单不存在微信支付交易记录');
-        }
-        // 请求微信API接口
-        return $this->request($this->buildApiParam($completed, $param), $completed['store_id']);
+        return false;
     }
 
     /**

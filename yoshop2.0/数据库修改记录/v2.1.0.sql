@@ -158,10 +158,6 @@ INSERT INTO `yoshop_store_menu` VALUES ('10212', '10', '打款设置', '/setting
 INSERT INTO `yoshop_store_menu` VALUES ('10213', '20', '删除', '', '1', '', 'delete', '10209', '100', '1614556800', '1614556800');
 INSERT INTO `yoshop_store_menu` VALUES ('10223', '20', '商家备注', '', '1', '', 'merchantRemark', '10055', '95', '1614556800', '1614556800');
 INSERT INTO `yoshop_store_menu` VALUES ('10237', '10', '客服设置', '/setting/customer', '1', 'setting-customer', '', '10115', '105', '1614556800', '1614556800');
-INSERT INTO `yoshop_store_menu` VALUES ('10238', '10', '发货管理', '/order/tools/delivery', '1', '', '', '10201', '100', '1614556800', '1614556800');
-INSERT INTO `yoshop_store_menu` VALUES ('10239', '20', '发货', '', '1', '', 'deliver', '10238', '100', '1614556800', '1614556800');
-INSERT INTO `yoshop_store_menu` VALUES ('10241', '10', '批量发货', '/order/tools/delivery/batch', '1', '', '', '10238', '100', '1614556800', '1614556800');
-INSERT INTO `yoshop_store_menu` VALUES ('10242', '10', '发货记录', '/order/tools/delivery/record', '1', '', '', '10238', '105', '1614556800', '1614556800');
 INSERT INTO `yoshop_store_menu` VALUES ('10252', '20', '打印小票', '', '1', 'order-printer', 'printer', '10055', '110', '1614556800', '1614556800');
 INSERT INTO `yoshop_store_menu` VALUES ('10256', '10', 'H5端', '/client/h5', '0', 'client-h5', '', '10112', '115', '1614556800', '1614556800');
 INSERT INTO `yoshop_store_menu` VALUES ('10257', '10', '站点设置', '/client/h5/setting', '1', '', '', '10256', '100', '1614556800', '1614556800');
@@ -969,28 +965,6 @@ INSERT INTO `yoshop_store_menu_api` VALUES ('11229', '10052', '11022', '16145568
 INSERT INTO `yoshop_store_menu_api` VALUES ('11230', '10052', '11020', '1614556800');
 INSERT INTO `yoshop_store_menu_api` VALUES ('11231', '10052', '11318', '1614556800');
 INSERT INTO `yoshop_store_menu_api` VALUES ('11232', '10052', '11076', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11233', '10239', '11321', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11234', '10239', '11318', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11235', '10239', '11076', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11237', '10240', '11318', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11238', '10240', '11076', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11239', '10238', '11077', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11240', '10238', '11165', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11241', '10238', '11169', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11242', '10238', '11023', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11243', '10238', '11024', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11246', '10238', '11132', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11247', '10238', '11076', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11248', '10238', '11164', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11249', '10238', '11154', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11250', '10238', '11022', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11251', '10238', '11020', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11255', '10241', '11322', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11256', '10241', '11318', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11257', '10241', '11076', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11258', '10242', '11319', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11259', '10242', '11318', '1614556800');
-INSERT INTO `yoshop_store_menu_api` VALUES ('11260', '10242', '11076', '1614556800');
 INSERT INTO `yoshop_store_menu_api` VALUES ('11263', '10245', '11051', '1614556800');
 INSERT INTO `yoshop_store_menu_api` VALUES ('11266', '10244', '11051', '1614556800');
 INSERT INTO `yoshop_store_menu_api` VALUES ('11269', '10246', '11051', '1614556800');
@@ -5435,4 +5409,3 @@ INSERT INTO `yoshop_region` VALUES ('3926', '可克达拉市', '3710', '659008',
 INSERT INTO `yoshop_region` VALUES ('3927', '昆玉市', '3710', '659009', '3');
 INSERT INTO `yoshop_region` VALUES ('3928', '胡杨河市', '3710', '659010', '3');
 INSERT INTO `yoshop_region` VALUES ('3929', '新星市', '3710', '659011', '3');
-

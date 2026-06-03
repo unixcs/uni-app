@@ -158,7 +158,7 @@ const personal = {
           lable: '订单类型',
           required: true,
           value: 'all', // 默认值
-          tips: 'all 全部<br>payment 待支付<br>delivery 待发货<br>received 待收货' // 字段提示
+          tips: 'all 全部<br>payment 待支付<br>contact 待联系<br>in_service 服务中<br>complete 已完成<br>cancel 已关闭<br>refund 已退款' // 字段提示
         }
       ]
     },

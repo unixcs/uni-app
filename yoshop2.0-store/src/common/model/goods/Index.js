@@ -3,25 +3,22 @@ import CategoryModel from '../Category'
 import * as GoodsApi from '@/api/goods'
 import * as GradeApi from '@/api/user/grade'
 import * as ServiceApi from '@/api/goods/service'
-import * as DeliveryApi from '@/api/setting/delivery'
 
 /**
- * 商品 model类
+ * 服务套餐 model类
  * GoodsModel
  */
 export default {
 
-  // 当前商品ID
+  // 当前服务套餐ID
   goodsId: null,
 
   // 表单数据
   formData: {
-    // 当前商品记录
+    // 当前服务套餐记录
     goods: {},
     // 分类列表
     categoryList: [],
-    // 运费模板
-    deliveryList: [],
     // 服务与承诺
     serviceList: [],
     defaultServiceIds: [],
@@ -32,16 +29,14 @@ export default {
 
   // 获取form所需的数据
   getFromData (goodsId = null) {
-    // 记录商品ID (编辑时)
+    // 记录服务套餐ID (编辑时)
     this.goodsId = goodsId
     return new Promise((resolve, reject) => {
       Promise.all([
-        // 获取商品详情信息(编辑时)
+        // 获取服务套餐详情信息(编辑时)
         this.getGoodsDetail(goodsId),
         // 获取分类列表
         this.getCategoryList(),
-        // 获取运费模板列表
-        this.getDeliveryList(),
         // 获取服务与承诺
         this.getServiceList(),
         // 获取会员等级列表
@@ -54,7 +49,7 @@ export default {
     })
   },
 
-  // 获取商品详情
+  // 获取服务套餐详情
   getGoodsDetail (goodsId = null) {
     if (!goodsId) return false
     return new Promise((resolve, reject) => {
@@ -68,11 +63,11 @@ export default {
 
   // 获取表单默认值(用于form.setFieldsValue的数据)
   getFieldsValue () {
-    // 商品详情信息
+    // 服务套餐详情信息
     const goodsInfo = this.formData.goods
     // 格式化categoryIds
     goodsInfo.categorys = this.formatCategoryIds(goodsInfo.categoryIds)
-    // 商品基本数据
+    // 服务套餐基本数据
     const goodsFormData = _.pick(goodsInfo, [
       'goods_type', 'goods_name', 'categorys', 'goods_no', 'sort',
       'status', 'spec_type', 'deduct_stock_type', 'is_restrict', 'content',
@@ -88,18 +83,12 @@ export default {
   getFieldsValue2 () {
     const goodsInfo = this.formData.goods
     let goodsFormData = {}
-    // 运费模板 (仅实物商品存在运费模板和配送设置)
-    if (goodsInfo.goods_type == 10) {
-      goodsFormData['delivery_id'] = goodsInfo['delivery_id']
-      goodsFormData['is_ind_delivery_type'] = goodsInfo['is_ind_delivery_type']
-      goodsFormData['delivery_type'] = goodsInfo['delivery_type']
-    }
     // 单规格数据
     if (goodsInfo.spec_type == 10) {
-      const skuOne = _.pick(goodsInfo.skuList[0], ['goods_price', 'line_price', 'stock_num', 'goods_weight'])
+      const skuOne = _.pick(goodsInfo.skuList[0], ['goods_price', 'line_price', 'stock_num'])
       goodsFormData = { ...goodsFormData, ...skuOne }
     }
-    // 商品限购数据
+    // 服务套餐限购数据
     if (goodsInfo.is_restrict == 1) {
       goodsFormData['restrict_total'] = goodsInfo['restrict_total']
       goodsFormData['restrict_single'] = goodsInfo['restrict_single']
@@ -121,17 +110,6 @@ export default {
       CategoryModel.getCategoryTreeSelect()
         .then(list => {
           this.formData.categoryList = list
-          resolve()
-        })
-    })
-  },
-
-  // 获取运费模板列表
-  getDeliveryList () {
-    return new Promise((resolve, reject) => {
-      DeliveryApi.all()
-        .then(result => {
-          this.formData.deliveryList = result.data.list
           resolve()
         })
     })
@@ -161,13 +139,13 @@ export default {
 
   // 设置默认的数据(无法用于form.setFieldsValue的数据)
   setDefaultData () {
-    // 默认的商品服务与承诺
+    // 默认的服务与承诺
     this.setDefaultServiceIds()
     // 默认的等级折扣
     this.setDefaultUserGradeValue()
   },
 
-  // 默认的商品服务与承诺
+  // 默认的服务与承诺
   setDefaultServiceIds () {
     // 服务与承诺列表
     const serviceList = this.formData.serviceList

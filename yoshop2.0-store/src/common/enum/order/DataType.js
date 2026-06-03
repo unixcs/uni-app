@@ -6,10 +6,10 @@ import Enum from '../enum'
  */
 export default new Enum([
   { key: 'ALL', name: '全部', value: 'all' },
-  { key: 'DELIVERY', name: '待发货', value: 'delivery' },
-  { key: 'RECEIPT', name: '待收货', value: 'receipt' },
   { key: 'PAY', name: '待付款', value: 'pay' },
+  { key: 'CONTACT', name: '待联系', value: 'contact' },
+  { key: 'IN_SERVICE', name: '服务中', value: 'in_service' },
   { key: 'COMPLETE', name: '已完成', value: 'complete' },
-  { key: 'APPLY_CANCEL', name: '待取消', value: 'apply_cancel' },
-  { key: 'CANCEL', name: '已取消', value: 'cancel' }
+  { key: 'CANCEL', name: '已关闭', value: 'cancel' },
+  { key: 'REFUND', name: '已退款', value: 'refund' }
 ])

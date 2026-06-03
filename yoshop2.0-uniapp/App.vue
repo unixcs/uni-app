@@ -35,11 +35,17 @@
 
       // 获取商城基础信息
       getStoreInfo() {
-        StoreModel.data(false)
+        StoreModel.data(false).catch(err => {
+          console.error('应用启动获取商城信息失败', err)
+        })
       },
 
       // 小程序主动更新
       updateManager() {
+        if (typeof uni.getUpdateManager !== 'function') {
+          console.warn('当前环境不支持 getUpdateManager，跳过自动更新')
+          return
+        }
         const updateManager = uni.getUpdateManager()
         updateManager.onCheckForUpdate(res => {
           // 请求完新版本信息的回调

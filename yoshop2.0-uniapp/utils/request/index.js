@@ -68,10 +68,6 @@ $http.requestStart = options => {
   options.header['platform'] = store.getters.platform
   // 请求前加入Token
   options.header['Access-Token'] = store.getters.token
-  // 请求前加入domain (仅H5端)
-  // #ifdef H5
-  options.header['domain'] = window.location.hostname
-  // #endif
   // 剔除data中为null的属性 (解决传参字符串'null'的问题)
   if (hasOwnProperty(options, 'data') && !isEmptyObject(options.data)) {
     options.data = filterNull(options.data)
@@ -199,7 +195,7 @@ $http.dataFactory = async res => {
 // 错误回调
 $http.requestError = e => {
   if (e.statusCode === 0) {
-    throw e
+    setTimeout(() => showRequestError(e), 10)
   } else {
     setTimeout(() => showRequestError(e), 10)
   }

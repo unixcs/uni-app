@@ -28,6 +28,7 @@ class MenuApi extends MenuApiModel
      */
     public static function getApiIds(array $menuIds): array
     {
-        return (new self)->where('menu_id', 'in', $menuIds)->column('api_id');
+        $apiIds = (new self)->where('menu_id', 'in', $menuIds)->column('api_id');
+        return array_values(array_diff($apiIds, static::getLegacyDeliveryApiIds()));
     }
 }

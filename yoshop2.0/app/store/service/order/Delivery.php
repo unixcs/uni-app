@@ -103,7 +103,7 @@ class Delivery extends BaseService
             // 发货的商品
             'packGoodsData' => [],
             // 同步至微信小程序《发货信息管理》
-            'syncMpWeixinShipping' => 1,
+            'syncMpWeixinShipping' => 0,
         ]);
     }
 

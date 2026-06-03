@@ -14,6 +14,7 @@ namespace app\common\model;
 
 use cores\BaseModel;
 
+use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\library\helper;
 use think\model\relation\BelongsTo;
 use think\model\relation\HasOne;
@@ -68,7 +69,9 @@ class OrderGoods extends BaseModel
      */
     public function refund(): HasOne
     {
-        return $this->hasOne('OrderRefund');
+        return $this->hasOne('OrderRefund')
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->order(['create_time' => 'desc', 'order_refund_id' => 'desc']);
     }
 
     /**

@@ -21,16 +21,6 @@
                 </a-select>
               </a-input>
             </a-form-item>
-            <a-form-item label="售后类型">
-              <a-select v-decorator="['refundType', { initialValue: -1 }]">
-                <a-select-option :value="-1">全部</a-select-option>
-                <a-select-option
-                  v-for="(item, index) in RefundTypeEnum.data"
-                  :key="index"
-                  :value="item.value"
-                >{{ item.name }}</a-select-option>
-              </a-select>
-            </a-form-item>
             <a-form-item label="售后单状态">
               <a-select v-decorator="['refundStatus', { initialValue: -1 }]">
                 <a-select-option :value="-1">全部</a-select-option>
@@ -102,7 +92,7 @@
                       <UserItem :user="item.user" />
                     </td>
                     <td>
-                      <a-tag>{{ RefundTypeEnum[item.type].name }}</a-tag>
+                      <a-tag>服务退款</a-tag>
                     </td>
                     <td>
                       <p class="mtb-2">
@@ -110,18 +100,6 @@
                         <a-tag
                           :color="renderAuditStatusColor(item.audit_status)"
                         >{{ AuditStatusEnum[item.audit_status].name }}</a-tag>
-                      </p>
-                      <p v-if="item.type == RefundTypeEnum.RETURN.value" class="mtb-2">
-                        <span class="f-13">用户发货：</span>
-                        <a-tag
-                          :color="item.is_user_send ? 'green' : ''"
-                        >{{ item.is_user_send ? '已发货' : '待发货' }}</a-tag>
-                      </p>
-                      <p v-if="item.type == RefundTypeEnum.RETURN.value" class="mtb-2">
-                        <span class="f-13">商家收货：</span>
-                        <a-tag
-                          :color="item.is_receipt ? 'green' : ''"
-                        >{{ item.is_receipt ? '已收货' : '待收货' }}</a-tag>
                       </p>
                     </td>
                     <td>
@@ -140,16 +118,6 @@
                           v-if="item.audit_status == AuditStatusEnum.WAIT.value"
                           @click="handleAudit(item)"
                         >审核</a>
-                        <a
-                          v-action:receipt
-                          v-if="(
-                            item.type == RefundTypeEnum.RETURN.value
-                              && item.audit_status == AuditStatusEnum.REVIEWED.value
-                              && item.is_user_send
-                              && !item.is_receipt
-                          )"
-                          @click="handleReceipt(item)"
-                        >确认收货</a>
                       </div>
                     </td>
                   </tr>
@@ -171,7 +139,6 @@
         />
       </div>
       <AuditForm ref="AuditForm" @handleSubmit="handleRefresh" />
-      <ReceiptForm ref="ReceiptForm" @handleSubmit="handleRefresh" />
     </a-spin>
   </a-card>
 </template>
@@ -182,7 +149,7 @@ import { inArray, assignment } from '@/utils/util'
 import * as Api from '@/api/order/refund'
 import { GoodsItem, UserItem } from '@/components/Table'
 import { AuditStatusEnum, RefundStatusEnum, RefundTypeEnum } from '@/common/enum/order/refund'
-import { AuditForm, ReceiptForm } from './modules'
+import { AuditForm } from './modules'
 
 // 表格字段
 const columns = [
@@ -241,8 +208,7 @@ export default {
   components: {
     GoodsItem,
     UserItem,
-    AuditForm,
-    ReceiptForm
+    AuditForm
   },
   data () {
     return {
@@ -354,9 +320,9 @@ export default {
       this.$refs.AuditForm.show(record)
     },
 
-    // 确认收货
-    handleReceipt (record) {
-      this.$refs.ReceiptForm.show(record)
+    // 是否服务订单售后
+    isServiceOrderItem () {
+      return true
     }
 
   }

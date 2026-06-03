@@ -15,11 +15,13 @@ namespace app\common\service\order;
 use app\common\library\helper;
 use app\common\model\User as UserModel;
 use app\common\model\Order as OrderModel;
+use app\common\model\OrderRefund as OrderRefundModel;
 use app\common\model\store\Setting as SettingModel;
 use app\common\model\user\PointsLog as PointsLogModel;
 use app\common\enum\Setting as SettingEnum;
-use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\order\refund\AuditStatus as AuditStatusEnum;
+use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
+use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\service\BaseService;
 
 /**
@@ -94,19 +96,14 @@ class Complete extends BaseService
         // 计算用户所得积分
         $userData = [];
         $logData = [];
+        $completedRefundMap = $this->getCompletedRefundMap($orderList);
         foreach ($orderList as $order) {
             // 计算用户所得积分
             $pointsBonus = $order['points_bonus'];
             if ($pointsBonus <= 0) continue;
-            // 减去订单退款的积分
-            foreach ($order['goods'] as $goods) {
-                if (
-                    !empty($goods['refund'])
-                    && $goods['refund']['type'] == RefundTypeEnum::RETURN      // 售后类型：退货退款
-                    && $goods['refund']['audit_status'] == AuditStatusEnum::REVIEWED  // 商家审核：已同意
-                ) {
-                    $pointsBonus -= $goods['points_bonus'];
-                }
+            // 减去服务订单已完成退款对应的赠送积分
+            if (isset($completedRefundMap[$order['order_id']])) {
+                $pointsBonus = 0;
             }
             // 计算用户所得积分
             !isset($userData[$order['user_id']]) && $userData[$order['user_id']] = 0;
@@ -136,18 +133,13 @@ class Complete extends BaseService
     {
         // 计算并累积实际消费金额(需减去售后退款的金额)
         $userData = [];
+        $completedRefundMap = $this->getCompletedRefundMap($orderList);
         foreach ($orderList as $order) {
             // 订单实际支付金额
             $expendMoney = $order['pay_price'];
-            // 减去订单退款的金额
-            foreach ($order['goods'] as $goods) {
-                if (
-                    !empty($goods['refund'])
-                    && $goods['refund']['type'] == RefundTypeEnum::RETURN      // 售后类型：退货退款
-                    && $goods['refund']['audit_status'] == AuditStatusEnum::REVIEWED  // 商家审核：已同意
-                ) {
-                    $expendMoney = helper::bcsub($expendMoney, $goods['refund']['refund_money']);
-                }
+            // 减去订单退款的金额（以售后主表为准）
+            if (isset($completedRefundMap[$order['order_id']])) {
+                $expendMoney = helper::bcsub($expendMoney, $completedRefundMap[$order['order_id']]['refund_money']);
             }
             !isset($userData[$order['user_id']]) && $userData[$order['user_id']] = 0.00;
             if ($expendMoney > 0) {
@@ -156,5 +148,35 @@ class Complete extends BaseService
         }
         // 累积到会员表记录
         $this->UserModel->onBatchIncExpendMoney($userData);
+    }
+
+    /**
+     * 获取订单已完成退款映射
+     * @param iterable $orderList
+     * @return array
+     */
+    private function getCompletedRefundMap(iterable $orderList): array
+    {
+        $orderIds = array_values(array_filter(array_unique(helper::getArrayColumn($orderList, 'order_id'))));
+        if (empty($orderIds)) {
+            return [];
+        }
+        $refundList = (new OrderRefundModel)
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('order_id', 'in', $orderIds)
+            ->where('audit_status', '=', AuditStatusEnum::REVIEWED)
+            ->where('status', '=', RefundStatusEnum::COMPLETED)
+            ->order(['create_time' => 'desc', 'order_refund_id' => 'desc'])
+            ->select();
+        $data = [];
+        foreach ($refundList as $refund) {
+            $orderId = (int)$refund['order_id'];
+            if (!isset($data[$orderId])) {
+                $data[$orderId] = [
+                    'refund_money' => (string)$refund['refund_money'],
+                ];
+            }
+        }
+        return $data;
     }
 }

@@ -34,6 +34,11 @@ use cores\exception\BaseException;
 class Login extends BaseService
 {
     /**
+     * 调试测试手机号（仅本地调试登录使用）
+     */
+    public const DEBUG_TEST_MOBILE = '19900000000';
+
+    /**
      * 用户信息 (登录成功后才记录)
      * @var UserModel|null $userInfo
      */
@@ -156,6 +161,25 @@ class Login extends BaseService
         // 保存第三方用户信息
         $this->createUserOauth($this->getUserId(), $loginData['isParty'], $loginData['partyData']);
         // 记录登录态
+        return $this->setSession();
+    }
+
+    /**
+     * 调试登录：固定测试身份直连登录态
+     * @return bool
+     * @throws BaseException
+     * @throws \think\Exception
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public function loginDebug(): bool
+    {
+        $this->register([
+            'mobile' => self::DEBUG_TEST_MOBILE,
+            'isParty' => false,
+            'partyData' => [],
+        ]);
         return $this->setSession();
     }
 

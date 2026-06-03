@@ -23,28 +23,19 @@
       </view>
     </view>
 
-    <!-- 服务类型 -->
-    <view class="row-service b-f m-top20">
-      <view class="row-title">服务类型</view>
-      <view class="service-switch dis-flex">
-        <view class="switch-item" v-for="(item, index) in RefundTypeEnum.data" :key="index" :class="{ active: formData.type == item.value }"
-          @click="onSwitchService(item.value)">{{ item.name }}</view>
-      </view>
-    </view>
-
-    <!-- 申请原因 -->
+    <!-- 退款原因 -->
     <view class="row-textarea b-f m-top20">
-      <view class="row-title">申请原因</view>
+      <view class="row-title">退款原因</view>
       <view class="content">
-        <textarea class="textarea" v-model="formData.content" maxlength="2000" placeholder="请详细填写申请原因，注意保持商品的完好，建议您先与卖家沟通"
+        <textarea class="textarea" v-model="formData.content" maxlength="2000" placeholder="请详细填写退款原因，建议您先与服务方沟通"
           placeholderStyle="color:#ccc"></textarea>
       </view>
     </view>
 
     <!-- 退款金额 -->
-    <view v-if="formData.type == RefundTypeEnum.RETURN.value" class="row-money b-f m-top20 dis-flex">
+    <view class="row-money b-f m-top20 dis-flex">
       <view class="row-title">退款金额</view>
-      <view class="money col-m">￥{{ goods.total_pay_price }}</view>
+      <view class="money col-m">￥{{ goods.refund_money || goods.total_pay_price }}</view>
     </view>
 
     <!-- 上传凭证 -->
@@ -67,7 +58,7 @@
     <!-- 底部操作按钮 -->
     <view class="footer-fixed">
       <view class="btn-wrapper">
-        <view class="btn-item btn-item-main" :class="{ disabled }" @click="handleSubmit()">确认提交</view>
+        <view class="btn-item btn-item-main" :class="{ disabled }" @click="handleSubmit()">提交退款申请</view>
       </view>
     </view>
 
@@ -75,7 +66,6 @@
 </template>
 
 <script>
-  import { RefundTypeEnum } from '@/common/enum/order/refund'
   import * as UploadApi from '@/api/upload'
   import * as RefundApi from '@/api/refund'
 
@@ -84,8 +74,6 @@
   export default {
     data() {
       return {
-        // 枚举类
-        RefundTypeEnum,
         // 正在加载
         isLoading: true,
         // 订单商品id
@@ -96,9 +84,9 @@
         formData: {
           // 图片上传成功的文件ID集
           images: [],
-          // 服务类型
+          // 退款类型
           type: 10,
-          // 申请原因
+          // 退款原因
           content: ''
         },
         // 用户选择的图片列表
@@ -130,11 +118,6 @@
             app.goods = result.data.goods
             app.isLoading = false
           })
-      },
-
-      // 切换类型
-      onSwitchService(value) {
-        this.formData.type = value
       },
 
       // 选择图片
@@ -186,7 +169,7 @@
         if (app.disabled === true) return false
         // 表单验证
         if (!app.formData.content.trim().length) {
-          app.$toast('请填写申请原因')
+          app.$toast('请填写退款原因')
           return false
         }
         // 按钮禁用

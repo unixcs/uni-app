@@ -15,6 +15,11 @@ export default {
    * 是否启用商城设置缓存
    * 将减少用户端重复请求; 正式运营时请设为true, 开启后商城设置同步前端需10分钟缓存
    */
-  enabledSettingCache: true
+  enabledSettingCache: true,
+
+  /**
+   * 是否显示H5调试登录入口
+   */
+  debugH5Login: false
 
 }

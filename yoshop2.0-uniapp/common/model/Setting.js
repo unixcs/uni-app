@@ -25,6 +25,7 @@ const getApiData = () => {
       .then(result => {
         resolve(result.data.setting)
       })
+      .catch(reject)
   })
 }
 
@@ -45,7 +46,7 @@ const data = (isCache = undefined) => {
       getApiData().then(data => {
         setStorage(data)
         resolve(data)
-      })
+      }).catch(reject)
     }
   })
 }
@@ -53,7 +54,7 @@ const data = (isCache = undefined) => {
 // 获取商城设置(指定项)
 const item = (key, isCache = undefined) => {
   return new Promise((resolve, reject) => {
-    data(isCache).then(setting => resolve(setting[key]))
+    data(isCache).then(setting => resolve(setting[key])).catch(reject)
   })
 }
 
@@ -63,7 +64,7 @@ const setAppTheme = () => {
     item(SettingKeyEnum.APP_THEME.value).then(appTheme => {
       store.dispatch('SetAppTheme', appTheme)
       resolve()
-    })
+    }).catch(reject)
   })
 }
 

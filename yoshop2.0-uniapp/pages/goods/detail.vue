@@ -57,19 +57,13 @@
       </view>
     </view>
 
-    <!-- 商品服务 -->
-    <Service v-if="!isLoading" :goods-id="goodsId" />
-
     <!-- 商品SKU弹窗 -->
     <SkuPopup v-if="!isLoading" v-model="showSkuPopup" :skuMode="skuMode" :goods="goods" @addCart="onAddCart" />
 
-    <!-- 商品评价 -->
-    <Comment v-if="!isLoading" :goods-id="goodsId" :limit="2" />
-
-    <!-- 商品描述 -->
+    <!-- 服务说明 -->
     <view v-if="!isLoading" class="goods-content m-top20">
       <view class="item-title b-f">
-        <text>商品描述</text>
+        <text>服务说明</text>
       </view>
       <view v-if="goods.content != ''" class="goods-content__detail b-f">
         <mp-html :content="goods.content" />
@@ -102,26 +96,12 @@
               </view>
             </view>
           </customer-btn>
-          <!-- 购物车 -->
-          <view class="fast-item fast-item--cart" @click="onTargetCart">
-            <view v-if="cartTotal > 0" class="fast-badge fast-badge--fixed">{{ cartTotal > 99 ? '99+' : cartTotal }}
-            </view>
-            <view class="fast-icon">
-              <text class="iconfont icon-gouwuche"></text>
-            </view>
-            <view class="fast-text">
-              <text>购物车</text>
-            </view>
-          </view>
         </view>
         <!-- 操作按钮 -->
         <view class="foo-item-btn">
           <view class="btn-wrapper">
-            <view v-if="isEnableCart" class="btn-item btn-item-deputy" @click="onShowSkuPopup(2)">
-              <text>加入购物车</text>
-            </view>
             <view class="btn-item btn-item-main" @click="onShowSkuPopup(3)">
-              <text>立即购买</text>
+              <text>{{ buyButtonText }}</text>
             </view>
           </view>
         </view>
@@ -140,15 +120,11 @@
 <script>
   import { getSceneData } from '@/core/app'
   import * as GoodsApi from '@/api/goods'
-  import * as CartApi from '@/api/cart'
   import SettingModel from '@/common/model/Setting'
-  import { GoodsTypeEnum } from '@/common/enum/goods'
   import ShareSheet from '@/components/share-sheet'
   import CustomerBtn from '@/components/customer-btn'
   import SlideImage from './components/SlideImage'
   import SkuPopup from './components/SkuPopup'
-  import Comment from './components/Comment'
-  import Service from './components/Service'
 
   export default {
     components: {
@@ -156,8 +132,6 @@
       CustomerBtn,
       SlideImage,
       SkuPopup,
-      Comment,
-      Service
     },
     data() {
       return {
@@ -167,16 +141,12 @@
         goodsId: null,
         // 商品详情
         goods: {},
-        // 购物车总数量
-        cartTotal: 0,
         // 显示/隐藏SKU弹窗
         showSkuPopup: false,
         // 模式 1:都显示 2:只显示购物车 3:只显示立即购买 4:显示缺货按钮 5:禁用 默认 1
         skuMode: 1,
         // 显示/隐藏分享菜单
         showShareSheet: false,
-        // 是否支持加入购物车
-        isEnableCart: false,
         // 是否显示在线客服按钮
         isShowCustomerBtn: false,
       }
@@ -186,6 +156,10 @@
       pagePath() {
         const params = this.$getShareUrlParams({ goodsId: this.goodsId })
         return `/pages/goods/detail?${params}`
+      },
+      // 底部主按钮文案
+      buyButtonText() {
+        return this.goods.is_service_package ? '立即下单' : '立即购买'
       }
     },
 
@@ -213,7 +187,7 @@
       onRefreshPage() {
         const app = this
         app.isLoading = true
-        Promise.all([app.getGoodsDetail(), app.getCartTotal()])
+        Promise.all([app.getGoodsDetail()])
           .finally(() => app.isLoading = false)
       },
 
@@ -224,45 +198,25 @@
           GoodsApi.detail(app.goodsId)
             .then(result => {
               app.goods = result.data.detail
-              if (app.goods.goods_type == GoodsTypeEnum.PHYSICAL.value) {
-                app.isEnableCart = true
-              }
               resolve(result)
             })
             .catch(reject)
         })
       },
 
-      // 获取购物车总数量
-      getCartTotal() {
-        const app = this
-        return new Promise((resolve, reject) => {
-          CartApi.total()
-            .then(result => {
-              app.cartTotal = result.data.cartTotal
-              resolve(result)
-            })
-            .catch(reject)
-        })
-      },
+      // 兼容 SKU 弹窗回调
+      onAddCart() {},
 
-      // 更新购物车数量
-      onAddCart(total) {
-        this.cartTotal = total
-      },
+      // 兼容商品规格组件回调
+      onAddCart() {},
 
       /**
        * 显示/隐藏SKU弹窗
        * @param {skuMode} 模式 1:都显示 2:只显示购物车 3:只显示立即购买
        */
       onShowSkuPopup(skuMode = 1) {
-        const app = this
-        if (app.isEnableCart) {
-          app.skuMode = skuMode
-        } else {
-          app.skuMode = 3
-        }
-        app.showSkuPopup = !app.showSkuPopup
+        this.skuMode = 3
+        this.showSkuPopup = !this.showSkuPopup
       },
 
       // 显示隐藏分享菜单
@@ -273,11 +227,6 @@
       // 跳转到首页
       onTargetHome(e) {
         this.$navTo('pages/index/index')
-      },
-
-      // 跳转到购物车页
-      onTargetCart() {
-        this.$navTo('pages/cart/index')
       },
 
     },

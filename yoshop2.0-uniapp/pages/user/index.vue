@@ -148,7 +148,6 @@
   import { inArray } from '@/utils/util'
   import AvatarImage from '@/components/avatar-image'
   import CustomerBtn from '@/components/customer-btn'
-  import { setCartTabBadge } from '@/core/app'
   import SettingKeyEnum from '@/common/enum/setting/Key'
   import StoreModel from '@/common/model/Store'
   import SettingModel from '@/common/model/Setting'
@@ -160,8 +159,8 @@
   const orderNavbar = [
     { id: 'all', name: '全部订单', icon: 'qpdingdan' },
     { id: 'payment', name: '待支付', icon: 'daifukuan', count: 0 },
-    { id: 'delivery', name: '待发货', icon: 'daifahuo', count: 0 },
-    { id: 'received', name: '待收货', icon: 'daishouhuo', count: 0 },
+    { id: 'contact', name: '待联系', icon: 'daifahuo', count: 0 },
+    { id: 'in_service', name: '服务中', icon: 'daishouhuo', count: 0 },
   ]
 
   /**
@@ -169,14 +168,13 @@
    * id: 标识; name: 标题名称; icon: 图标; type 类型(link和button); url: 跳转的链接
    */
   const service = [
-    { id: 'address', name: '收货地址', icon: 'shouhuodizhi', type: 'link', url: 'pages/address/index' },
     { id: 'coupon', name: '领券中心', icon: 'lingquan', type: 'link', url: 'pages/coupon/index', moduleKey: 'market-coupon' },
     { id: 'myCoupon', name: '优惠券', icon: 'youhuiquan', type: 'link', url: 'pages/my-coupon/index', moduleKey: 'market-coupon' },
-    { id: 'refund', name: '退换/售后', icon: 'shouhou', type: 'link', url: 'pages/refund/index', count: 0 },
     { id: 'contact', name: '在线客服', icon: 'kefu', type: 'contact' },
     { id: 'points', name: '我的积分', icon: 'jifen', type: 'link', url: 'pages/points/log', moduleKey: 'market-points' },
+    { id: 'refund', name: '售后/退款', icon: 'shouhou', type: 'link', url: 'pages/refund/index' },
     { id: 'orderCenter', name: '订单中心', icon: 'order-c', type: 'link', url: 'pages/order/center' },
-    { id: 'help', name: '我的帮助', icon: 'bangzhu', type: 'link', url: 'pages/help/index', moduleKey: 'content-help' },
+    { id: 'help', name: '服务政策', icon: 'bangzhu', type: 'link', url: 'pages/help/index', moduleKey: 'content-help' },
   ]
 
   export default {
@@ -206,7 +204,7 @@
         // 订单操作
         orderNavbar,
         // 当前用户待处理的订单数量
-        todoCounts: { payment: 0, deliver: 0, received: 0 }
+        todoCounts: { payment: 0, contact: 0, in_service: 0 }
       }
     },
 
@@ -226,8 +224,6 @@
 
       // 刷新页面
       onRefreshPage() {
-        // 更新购物车角标
-        setCartTabBadge()
         // 判断是否已登录
         this.isLogin = checkLogin()
         // 获取页面数据
@@ -270,7 +266,7 @@
           }
           // 数据角标
           if (item.count != undefined) {
-            item.count = app.todoCounts[item.id]
+            item.count = app.todoCounts[item.id] || 0
           }
           newService.push(item)
         })
@@ -283,7 +279,7 @@
         const newOrderNavbar = []
         orderNavbar.forEach(item => {
           if (item.count != undefined) {
-            item.count = app.todoCounts[item.id]
+            item.count = app.todoCounts[item.id] || 0
           }
           newOrderNavbar.push(item)
         })
@@ -349,7 +345,11 @@
         return new Promise((resolve, reject) => {
           !app.isLogin ? resolve(null) : OrderApi.todoCounts({}, { load: app.isFirstload })
             .then(result => {
-              app.todoCounts = result.data.counts
+              const counts = result.data.counts || {}
+              app.todoCounts = {
+                ...counts,
+                in_service: counts.in_service == null ? 0 : counts.in_service,
+              }
               resolve(app.todoCounts)
             })
             .catch(err => {

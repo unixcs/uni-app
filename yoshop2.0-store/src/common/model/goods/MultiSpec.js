@@ -2,7 +2,7 @@
 import _ from 'lodash'
 import { debounce, isEmpty } from '@/utils/util'
 
-// 默认的sku字段属性
+// 默认的套餐选项字段属性
 const defaultColumns = [
   {
     title: '预览图',
@@ -11,7 +11,7 @@ const defaultColumns = [
     scopedSlots: { customRender: 'image' }
   },
   {
-    title: '商品价格',
+    title: '套餐价格',
     dataIndex: 'goods_price',
     width: 120,
     scopedSlots: { customRender: 'goods_price' }
@@ -29,13 +29,7 @@ const defaultColumns = [
     scopedSlots: { customRender: 'stock_num' }
   },
   {
-    title: '商品重量 (KG)',
-    dataIndex: 'goods_weight',
-    width: 120,
-    scopedSlots: { customRender: 'goods_weight' }
-  },
-  {
-    title: 'SKU编码',
+    title: '套餐编码',
     dataIndex: 'goods_sku_no',
     width: 140,
     scopedSlots: { customRender: 'goods_sku_no' }
@@ -50,7 +44,6 @@ const defaultSkuItemData = {
   goods_price: '',
   line_price: '',
   stock_num: '',
-  goods_weight: '',
   goods_sku_no: ''
 }
 
@@ -75,11 +68,11 @@ const defaultSkuItemData = {
 // ]
 
 /**
- * 商品 model类
+ * 套餐规格 model类
  * GoodsModel
  */
 export default class MultiSpec {
-  // 商品多规格数据
+  // 套餐多规格数据
   multiSpecData = {}
 
   // 错误信息
@@ -298,7 +291,6 @@ export default class MultiSpec {
     // if (!skuBatchForm.image_id) {
     //   delete skuBatchForm.image
     // }
-    console.log('skuBatchForm', skuBatchForm)
     for (const index in skuList) {
       skuList[index] = { ...skuList[index], ...skuBatchForm }
     }
@@ -332,19 +324,18 @@ export default class MultiSpec {
     if (!this.verifySpec()) {
       return false
     }
-    // 验证sku
+    // 验证套餐选项
     if (!this.verifySkuList()) {
       return false
     }
     return true
   }
 
-  // 验证sku
+  // 验证套餐选项
   verifySkuList () {
     const columns = [
-      { field: 'goods_price', name: '商品价格' },
+      { field: 'goods_price', name: '套餐价格' },
       { field: 'stock_num', name: '库存数量' },
-      { field: 'goods_weight', name: '商品重量' }
     ]
     const skuList = this.multiSpecData.skuList
     for (const skuIndex in skuList) {

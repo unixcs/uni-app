@@ -5,5 +5,5 @@ import Enum from '../enum'
  * GoodsTypeEnum
  */
 export default new Enum([
-  { key: 'PHYSICAL', name: '实物商品', value: 10 }
+  { key: 'PHYSICAL', name: '服务套餐', value: 10 }
 ])

@@ -38,7 +38,7 @@ export default {
       list: [
         {
           title: GoodsTypeEnum.PHYSICAL.name,
-          help: '物流发货',
+          help: '按服务/套餐交付',
           value: GoodsTypeEnum.PHYSICAL.value
         }
       ]
@@ -56,7 +56,7 @@ export default {
 </script>
 
 <style lang="less" scoped>
-// 商品类型
+// 服务套餐类型
 .goods-type {
   display: flex;
   margin-bottom: 15px;

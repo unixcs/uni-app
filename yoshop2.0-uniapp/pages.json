@@ -15,11 +15,6 @@
       "selectedIconPath": "static/tabbar/cate-active.png",
       "text": "分类"
     }, {
-      "pagePath": "pages/cart/index",
-      "iconPath": "static/tabbar/cart.png",
-      "selectedIconPath": "static/tabbar/cart-active.png",
-      "text": "购物车"
-    }, {
       "pagePath": "pages/user/index",
       "iconPath": "static/tabbar/user.png",
       "selectedIconPath": "static/tabbar/user-active.png",
@@ -37,12 +32,6 @@
       "path": "pages/category/index",
       "style": {
         "navigationBarTitleText": "全部分类"
-      }
-    },
-    {
-      "path": "pages/cart/index",
-      "style": {
-        "navigationBarTitleText": "购物车"
       }
     },
     {
@@ -117,37 +106,13 @@
     {
       "path": "pages/goods/detail",
       "style": {
-        "navigationBarTitleText": "商品详情页"
-      }
-    },
-    {
-      "path": "pages/comment/index",
-      "style": {
-        "navigationBarTitleText": "商品评价页"
+        "navigationBarTitleText": "服务详情"
       }
     },
     {
       "path": "pages/my-coupon/index",
       "style": {
         "navigationBarTitleText": "我的优惠券"
-      }
-    },
-    {
-      "path": "pages/address/index",
-      "style": {
-        "navigationBarTitleText": "收货地址"
-      }
-    },
-    {
-      "path": "pages/address/create",
-      "style": {
-        "navigationBarTitleText": "新增收货地址"
-      }
-    },
-    {
-      "path": "pages/address/update",
-      "style": {
-        "navigationBarTitleText": "编辑收货地址"
       }
     },
     {
@@ -183,7 +148,7 @@
     {
       "path": "pages/checkout/index",
       "style": {
-        "navigationBarTitleText": "订单结算台"
+        "navigationBarTitleText": "服务下单"
       }
     },
     {
@@ -195,53 +160,41 @@
     {
       "path": "pages/order/center",
       "style": {
-        "navigationBarTitleText": "订单中心",
+        "navigationBarTitleText": "服务订单中心",
         "enablePullDownRefresh": true
       }
     },
     {
       "path": "pages/order/index",
       "style": {
-        "navigationBarTitleText": "我的订单",
+        "navigationBarTitleText": "我的服务订单",
         "enablePullDownRefresh": true
       }
     },
     {
       "path": "pages/order/detail",
       "style": {
-        "navigationBarTitleText": "订单详情",
+        "navigationBarTitleText": "服务订单详情",
         "navigationBarTextStyle": "white",
         "navigationBarBackgroundColor": "#e8c269"
       }
     },
     {
-      "path": "pages/order/express/index",
-      "style": {
-        "navigationBarTitleText": "物流跟踪"
-      }
-    },
-    {
-      "path": "pages/order/comment/index",
-      "style": {
-        "navigationBarTitleText": "订单评价"
-      }
-    },
-    {
       "path": "pages/refund/index",
       "style": {
-        "navigationBarTitleText": "退换/售后"
+        "navigationBarTitleText": "退款记录"
       }
     },
     {
       "path": "pages/refund/detail",
       "style": {
-        "navigationBarTitleText": "售后详情"
+        "navigationBarTitleText": "退款详情"
       }
     },
     {
       "path": "pages/refund/apply",
       "style": {
-        "navigationBarTitleText": "申请售后"
+        "navigationBarTitleText": "申请退款"
       }
     },
     {

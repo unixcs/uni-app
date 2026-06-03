@@ -100,7 +100,7 @@
   import DiyOfficialAccount from './diyComponents/officialAccount'
   import Coupon from './diyComponents/coupon'
   import ICPLicense from './diyComponents/ICPLicense'
-  import Title from './diyComponents/Title'
+  import Title from './diyComponents/title'
 
   export default {
     name: "Page",

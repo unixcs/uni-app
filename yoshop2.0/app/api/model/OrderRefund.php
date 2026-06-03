@@ -14,10 +14,15 @@ namespace app\api\model;
 
 use app\api\service\User as UserService;
 use app\api\model\OrderGoods as OrderGoodsModel;
+use app\common\model\Order as OrderModel;
 use app\common\model\OrderRefund as OrderRefundModel;
-use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\order\refund\AuditStatus as AuditStatusEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
+use app\common\enum\order\refund\RefundType as RefundTypeEnum;
+use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
+use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
+use app\common\enum\order\OrderStatus as OrderStatusEnum;
+use app\common\enum\order\PayStatus as PayStatusEnum;
 use cores\exception\BaseException;
 
 /**
@@ -33,7 +38,12 @@ class OrderRefund extends OrderRefundModel
      */
     protected $hidden = [
         'store_id',
-        'update_time'
+        'update_time',
+        'type',
+        'is_user_send',
+        'express_id',
+        'express_no',
+        'address_id'
     ];
 
     /**
@@ -42,6 +52,9 @@ class OrderRefund extends OrderRefundModel
      */
     protected $append = [
         'state_text',   // 售后单状态文字描述
+        'service_state',
+        'service_state_text',
+        'action_flags',
     ];
 
     /**
@@ -54,8 +67,7 @@ class OrderRefund extends OrderRefundModel
     {
         // 已完成
         if ($data['status'] == RefundStatusEnum::COMPLETED) {
-            $text = [RefundTypeEnum::RETURN => '已同意退货并已退款', RefundTypeEnum::EXCHANGE => '已同意换货'];
-            return $text[$data['type']];
+            return '已退款';
         }
         // 已取消
         if ($data['status'] == RefundStatusEnum::CANCELLED) {
@@ -63,19 +75,61 @@ class OrderRefund extends OrderRefundModel
         }
         // 已拒绝
         if ($data['status'] == RefundStatusEnum::REJECTED) {
-            // return '已拒绝';
-            return $data['type'] == RefundTypeEnum::RETURN ? '已拒绝退货退款' : '已拒绝换货';
+            return '已拒绝退款';
         }
         // 进行中
         if ($data['status'] == RefundStatusEnum::NORMAL) {
             if ($data['audit_status'] == AuditStatusEnum::WAIT) {
-                return '等待审核中';
+                return '退款审核中';
             }
-            if ($data['type'] == RefundTypeEnum::RETURN) {
-                return $data['is_user_send'] ? '已发货，待平台确认' : '已同意退货，请及时发货';
-            }
+            return '退款处理中';
         }
         return $value;
+    }
+
+    /**
+     * 获取器：服务售后状态标识
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getServiceStateAttr($value, $data): string
+    {
+        if ($data['status'] == RefundStatusEnum::COMPLETED) {
+            return 'refunded';
+        }
+        if ($data['status'] == RefundStatusEnum::CANCELLED) {
+            return 'cancelled';
+        }
+        if ($data['status'] == RefundStatusEnum::REJECTED) {
+            return 'rejected';
+        }
+        return $data['audit_status'] == AuditStatusEnum::WAIT ? 'reviewing' : 'processing';
+    }
+
+    /**
+     * 获取器：服务售后状态文字
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getServiceStateTextAttr($value, $data): string
+    {
+        return $this->getStateTextAttr($value, $data);
+    }
+
+    /**
+     * 获取器：动作标识
+     * @param $value
+     * @param $data
+     * @return array
+     */
+    public function getActionFlagsAttr($value, $data): array
+    {
+        return [
+            'can_cancel' => $data['status'] == RefundStatusEnum::NORMAL,
+            'can_reapply' => $data['status'] == RefundStatusEnum::REJECTED,
+        ];
     }
 
     /**
@@ -88,13 +142,15 @@ class OrderRefund extends OrderRefundModel
     public function getList(int $state = -1): \think\Paginator
     {
         // 检索查询条件
-        $filter = [];
+        $filter = [
+            ['type', '=', RefundTypeEnum::SERVICE]
+        ];
         // 售后单状态
         $state > -1 && $filter[] = ['status', '=', $state];
         // 当前用户ID
         $userId = UserService::getCurrentLoginUserId();
         // 查询列表记录
-        return $this->with(['orderGoods.image'])
+        return $this->with(['orderGoods.image', 'orderData'])
             ->where($filter)
             ->where('user_id', '=', $userId)
             ->order(['create_time' => 'desc'])
@@ -111,11 +167,12 @@ class OrderRefund extends OrderRefundModel
     public static function getDetail(int $orderRefundId, bool $isWith = false): ?self
     {
         // 关联查询
-        $with = $isWith ? ['orderGoods' => ['image'], 'images.file', 'address', 'express'] : [];
+        $with = $isWith ? ['orderGoods' => ['image'], 'orderData'] : [];
         // 获取记录
         $detail = static::detail([
             'user_id' => UserService::getCurrentLoginUserId(),
-            'order_refund_id' => $orderRefundId
+            'order_refund_id' => $orderRefundId,
+            'type' => RefundTypeEnum::SERVICE,
         ], $with);
         empty($detail) && throwError('未找到该售后单');
         return $detail;
@@ -130,6 +187,7 @@ class OrderRefund extends OrderRefundModel
     {
         $userId = UserService::getCurrentLoginUserId();
         return (new static)->where('user_id', '=', $userId)
+            ->where('type', '=', RefundTypeEnum::SERVICE)
             ->where('status', '=', 0)
             ->count();
     }
@@ -147,8 +205,18 @@ class OrderRefund extends OrderRefundModel
         if (empty($goods)) {
             throwError('未找到订单商品信息');
         }
-        if (isset($goods['refund']) && !empty($goods['refund'])) {
-            throwError('当前商品已申请售后');
+        $order = OrderModel::detail(['order_id' => $goods['order_id'], 'user_id' => $userId]);
+        if (empty($order)) {
+            throwError('订单不存在或不属于当前用户');
+        }
+        if ($order['pay_status'] != PayStatusEnum::SUCCESS) {
+            throwError('未支付订单不允许申请售后');
+        }
+        if ($order['order_status'] != OrderStatusEnum::NORMAL) {
+            throwError('当前订单状态不允许申请售后');
+        }
+        if ($order['delivery_status'] != DeliveryStatusEnum::NOT_DELIVERED) {
+            throwError('服务已开始，不允许申请售后');
         }
         return $goods;
     }
@@ -160,28 +228,8 @@ class OrderRefund extends OrderRefundModel
      */
     public function delivery(array $data): bool
     {
-        if (
-            $this['type'] != RefundTypeEnum::RETURN
-            || $this['audit_status'] != AuditStatusEnum::REVIEWED
-            || $this['is_user_send'] != 0
-        ) {
-            $this->error = '当前售后单不合法，不允许该操作';
-            return false;
-        }
-        if ($data['expressId'] <= 0) {
-            $this->error = '请选择物流公司';
-            return false;
-        }
-        if (empty($data['expressNo'])) {
-            $this->error = '请填写物流单号';
-            return false;
-        }
-        return $this->save([
-            'is_user_send' => 1,
-            'send_time' => time(),
-            'express_id' => (int)$data['expressId'],
-            'express_no' => $data['expressNo'],
-        ]);
+        $this->error = '当前售后单不支持物流发货';
+        return false;
     }
 
     /**
@@ -195,43 +243,36 @@ class OrderRefund extends OrderRefundModel
     {
         // 订单商品详情
         $goods = $this->getRefundGoods($orderGoodsId);
+        if ($this->hasActiveRefundByOrderId((int)$goods['order_id'])) {
+            throwError('当前订单已存在进行中的售后单');
+        }
         return $this->transaction(function () use ($orderGoodsId, $data, $goods) {
             // 新增售后单记录
             $this->save([
                 'order_goods_id' => $orderGoodsId,
                 'order_id' => $goods['order_id'],
                 'user_id' => UserService::getCurrentLoginUserId(),
-                'type' => $data['type'],
+                'type' => RefundTypeEnum::SERVICE,
                 'apply_desc' => $data['content'],
                 'audit_status' => AuditStatusEnum::WAIT,
                 'status' => 0,
                 'store_id' => self::$storeId
             ]);
-            // 记录凭证图片关系
-            if (!empty($data['images'])) {
-                $this->saveImages((int)$this['order_refund_id'], $data['images']);
-            }
             return true;
         });
     }
 
     /**
-     * 记录售后单图片
-     * @param int $orderRefundId 售后单ID
-     * @param array $images 图片列表
-     * @return void
+     * 当前订单是否存在进行中的售后单
+     * @param int $orderId
+     * @return bool
      */
-    private function saveImages(int $orderRefundId, array $images): void
+    private function hasActiveRefundByOrderId(int $orderId): bool
     {
-        // 生成评价图片数据
-        $data = [];
-        foreach ($images as $imageId) {
-            $data[] = [
-                'order_refund_id' => $orderRefundId,
-                'image_id' => $imageId,
-                'store_id' => self::$storeId
-            ];
-        }
-        !empty($data) && (new OrderRefundImage)->addAll($data) !== false;
+        return (new static)
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('order_id', '=', $orderId)
+            ->where('status', '=', RefundStatusEnum::NORMAL)
+            ->count() > 0;
     }
 }

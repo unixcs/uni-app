@@ -23,26 +23,6 @@
           </a-radio-group>
         </a-form-item>
         <a-form-item
-          v-if="form.getFieldValue('audit_status') == AuditStatusEnum.REVIEWED.value"
-          label="退货地址"
-          :labelCol="labelCol"
-          :wrapperCol="wrapperCol"
-        >
-          <a-select
-            v-decorator="['address_id', { rules: [{ required: true, message: '请选择退货地址' }] }]"
-            placeholder="请选择退货地址"
-          >
-            <a-select-option
-              v-for="(item, index) in addressList"
-              :key="index"
-              :value="item.address_id"
-            >{{ item.full_address }}</a-select-option>
-          </a-select>
-          <div class="form-item-help">
-            <router-link target="_blank" :to="{ path: '/store/address/index' }">地址管理</router-link>
-          </div>
-        </a-form-item>
-        <a-form-item
           v-if="form.getFieldValue('audit_status') == AuditStatusEnum.REJECTED.value"
           label="拒绝原因"
           :labelCol="labelCol"
@@ -61,9 +41,7 @@
 <script>
 import { assignment } from '@/utils/util'
 import * as Api from '@/api/order/refund'
-import * as AddressApi from '@/api/store/address'
 import { AuditStatusEnum, RefundTypeEnum } from '@/common/enum/order/refund'
-import { AddressTypeEnum } from '@/common/enum/store/address'
 
 export default {
   data () {
@@ -80,8 +58,6 @@ export default {
       isLoading: false,
       // 当前表单元素
       form: this.$form.createForm(this),
-      // 退货地址列表
-      addressList: [],
       // 当前记录
       record: {}
     }
@@ -89,10 +65,6 @@ export default {
   beforeCreate () {
     // 批量给当前实例赋值
     assignment(this, { AuditStatusEnum, RefundTypeEnum })
-  },
-  created () {
-    // 获取退货地址列表
-    this.getAddressList()
   },
   methods: {
 
@@ -106,14 +78,6 @@ export default {
       this.$nextTick(() => {
         this.$forceUpdate()
       })
-    },
-
-    // 获取退货地址列表
-    getAddressList () {
-      this.isLoading = true
-      AddressApi.all({ type: AddressTypeEnum.RETURN.value })
-        .then(result => this.addressList = result.data.list)
-        .finally(() => this.isLoading = false)
     },
 
     // 确认按钮

@@ -3,6 +3,7 @@ import request from '@/utils/request'
 // api地址
 const api = {
   login: 'passport/login',
+  loginDebug: 'passport/loginDebug',
   loginMpWx: 'passport/loginMpWx',
   loginMpWxMobile: 'passport/loginMpWxMobile',
   isPersonalMpweixin: 'passport/isPersonalMpweixin',
@@ -11,6 +12,11 @@ const api = {
 // 用户登录 (手机号+验证码)
 export function login(data) {
   return request.post(api.login, data)
+}
+
+// H5调试登录 (固定测试身份)
+export function loginDebug(data, option) {
+  return request.post(api.loginDebug, data, option)
 }
 
 // 微信小程序快捷登录 (获取微信用户基本信息)

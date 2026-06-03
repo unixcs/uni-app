@@ -27,6 +27,9 @@ class RefundType extends EnumBasics
     // 换货
     const EXCHANGE = 20;
 
+    // 服务退款
+    const SERVICE = 30;
+
     /**
      * 获取枚举数据
      * @return array
@@ -41,6 +44,10 @@ class RefundType extends EnumBasics
             self::EXCHANGE => [
                 'name' => '换货',
                 'value' => self::EXCHANGE
+            ],
+            self::SERVICE => [
+                'name' => '服务退款',
+                'value' => self::SERVICE
             ]
         ];
     }

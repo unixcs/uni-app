@@ -30,6 +30,55 @@ class Menu extends BaseModel
     protected $pk = 'menu_id';
 
     /**
+     * 旧版物理商品发货菜单ID集
+     * @return array
+     */
+    public static function getLegacyDeliveryMenuIds(): array
+    {
+        return [10238, 10239, 10240, 10241, 10242];
+    }
+
+    /**
+     * 旧版物理商品发货菜单名称集
+     * @return array
+     */
+    public static function getLegacyDeliveryMenuNames(): array
+    {
+        return ['发货管理', '待发货', '待收货'];
+    }
+
+    /**
+     * 旧版物理商品发货菜单路由前缀
+     * @return array
+     */
+    public static function getLegacyDeliveryMenuPathPrefixes(): array
+    {
+        return ['/order/delivery', '/order/tools/delivery'];
+    }
+
+    /**
+     * 是否为旧版物理商品发货菜单
+     * @param array $menu
+     * @return bool
+     */
+    protected function isLegacyDeliveryMenu(array $menu): bool
+    {
+        if (in_array($menu['menu_id'] ?? null, static::getLegacyDeliveryMenuIds(), true)) {
+            return true;
+        }
+        if (in_array($menu['name'] ?? '', static::getLegacyDeliveryMenuNames(), true)) {
+            return true;
+        }
+        $path = (string)($menu['path'] ?? '');
+        foreach (static::getLegacyDeliveryMenuPathPrefixes() as $prefix) {
+            if ($path !== '' && str_starts_with($path, $prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 关联操作权限
      * @return HasMany
      */

@@ -11,8 +11,8 @@ export default {
     }
   },
   computed: {
-    appTheme: () => store.getters.appTheme,
-    appThemeStyle: () => styleObj2Str(store.getters.appTheme)
+    appTheme: () => store.getters.appTheme || {},
+    appThemeStyle: () => styleObj2Str(store.getters.appTheme || {})
   },
   mounted() {
     // #ifdef H5
@@ -37,7 +37,7 @@ export default {
     // #endif
     // 自定义主题样式
     customThemeStyle(styleObj) {
-      return styleObj2Str({ ...store.getters.appTheme, ...styleObj })
+      return styleObj2Str({ ...(store.getters.appTheme || {}), ...styleObj })
     }
   }
 }

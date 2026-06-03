@@ -125,8 +125,8 @@
         <a-row :gutter="32">
           <a-col :span="6">
             <div class="item">
-              <router-link to="/order/list/delivery">
-                <p class="name">待发货订单(笔)</p>
+              <router-link to="/order/list/contact">
+                <p class="name">待联系订单(笔)</p>
                 <p class="value">{{ data.pending.deliverOrderTotal }}</p>
               </router-link>
             </div>

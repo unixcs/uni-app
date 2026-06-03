@@ -46,6 +46,19 @@ const user = {
       })
     },
 
+    // H5调试登录 (固定测试身份)
+    LoginDebug({ commit }) {
+      return new Promise((resolve, reject) => {
+        LoginApi.loginDebug({}, { isPrompt: true })
+          .then(response => {
+            const result = response.data
+            loginSuccess(commit, result)
+            resolve(response)
+          })
+          .catch(reject)
+      })
+    },
+
     // 微信小程序一键授权登录 (获取用户基本信息)
     LoginMpWx({ commit }, data) {
       return new Promise((resolve, reject) => {

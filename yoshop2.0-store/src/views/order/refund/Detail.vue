@@ -26,18 +26,6 @@
                 @click="handleAudit"
               >商家审核</a-button>
             </div>
-            <div v-if="$auth('/order/refund/index.receipt')">
-              <a-button
-                v-if="(
-                  record.type == RefundTypeEnum.RETURN.value
-                    && record.audit_status == AuditStatusEnum.REVIEWED.value
-                    && record.is_user_send
-                    && !record.is_receipt
-                )"
-                type="primary"
-                @click="handleReceipt"
-              >确认收货</a-button>
-            </div>
           </div>
           <a-divider class="o-divider" />
         </div>
@@ -62,8 +50,8 @@
               <span>{{ record.orderData.pay_price }}</span>
             </span>
           </a-descriptions-item>
-          <a-descriptions-item label="售后类型">
-            <a-tag>{{ RefundTypeEnum[record.type].name }}</a-tag>
+          <a-descriptions-item label="退款类型">
+            <a-tag>服务退款</a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="售后单状态">
             <a-tag
@@ -80,14 +68,6 @@
               :color="renderAuditStatusColor(record.audit_status)"
             >{{ AuditStatusEnum[record.audit_status].name }}</a-tag>
           </a-descriptions-item>
-          <a-descriptions-item v-if="record.type == RefundTypeEnum.RETURN.value" label="发货状态 (买家)">
-            <a-tag
-              :color="record.is_user_send ? 'green' : ''"
-            >{{ record.is_user_send ? '已发货' : '待发货' }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item v-if="record.type == RefundTypeEnum.RETURN.value" label="收货状态 (商家)">
-            <a-tag :color="record.is_receipt ? 'green' : ''">{{ record.is_receipt ? '已收货' : '待收货' }}</a-tag>
-          </a-descriptions-item>
           <a-descriptions-item
             v-if="record.audit_status == AuditStatusEnum.REJECTED.value"
             label="拒绝原因"
@@ -102,20 +82,6 @@
         <a-descriptions title="买家申请原因">
           <a-descriptions-item label="售后描述">{{ record.apply_desc ? record.apply_desc : '--' }}</a-descriptions-item>
         </a-descriptions>
-        <template v-if="record.images.length">
-          <a-divider class="o-divider" />
-          <a-descriptions title="申请凭证">
-            <a-descriptions-item>
-              <div class="image-list">
-                <div v-for="item in record.images" :key="item.image_id" class="file-item">
-                  <a :href="item.image_url" target="_blank">
-                    <div class="img-cover" :style="{ backgroundImage: `url('${item.image_url}')` }"></div>
-                  </a>
-                </div>
-              </div>
-            </a-descriptions-item>
-          </a-descriptions>
-        </template>
       </a-card>
 
       <!-- 商品信息 -->
@@ -151,51 +117,8 @@
         </div>
       </a-card>
 
-      <!-- 商家退货地址 -->
-      <a-card
-        v-if="record.audit_status == AuditStatusEnum.REVIEWED.value"
-        class="mt-20"
-        :bordered="false"
-      >
-        <a-descriptions title="商家退货地址">
-          <a-descriptions-item label="收货人姓名">{{ record.address.name }}</a-descriptions-item>
-          <a-descriptions-item label="联系电话">{{ record.address.phone }}</a-descriptions-item>
-          <a-descriptions-item label="所在地区">
-            <span
-              class="region mr-5"
-              v-for="(region, idx) in record.address.region"
-              :key="idx"
-            >{{ region }}</span>
-          </a-descriptions-item>
-          <a-descriptions-item label="详细地址">{{ record.address.detail }}</a-descriptions-item>
-        </a-descriptions>
-      </a-card>
-
-      <!-- 用户发货信息 -->
-      <a-card
-        v-if="(
-          record.type == RefundTypeEnum.RETURN.value
-            && record.audit_status == AuditStatusEnum.REVIEWED.value
-            && record.is_user_send
-        )"
-        class="mt-20"
-        :bordered="false"
-      >
-        <a-descriptions title="退货物流信息">
-          <a-descriptions-item label="物流公司">{{ record.express.express_name }}</a-descriptions-item>
-          <a-descriptions-item label="物流单号">{{ record.express_no }}</a-descriptions-item>
-          <a-descriptions-item label="发货状态">
-            <a-tag
-              :color="record.is_user_send ? 'green' : ''"
-            >{{ record.is_user_send ? '已发货' : '待发货' }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="发货时间">{{ record.send_time }}</a-descriptions-item>
-        </a-descriptions>
-      </a-card>
-
     </div>
     <AuditForm ref="AuditForm" @handleSubmit="handleRefresh" />
-    <ReceiptForm ref="ReceiptForm" @handleSubmit="handleRefresh" />
   </div>
 </template>
 
@@ -204,7 +127,7 @@ import { assignment } from '@/utils/util'
 import * as Api from '@/api/order/refund'
 import { GoodsItem, UserItem } from '@/components/Table'
 import { AuditStatusEnum, RefundStatusEnum, RefundTypeEnum } from '@/common/enum/order/refund'
-import { AuditForm, ReceiptForm } from './modules'
+import { AuditForm } from './modules'
 
 // 商品内容表头
 const goodsColumns = [
@@ -244,8 +167,7 @@ export default {
   components: {
     GoodsItem,
     UserItem,
-    AuditForm,
-    ReceiptForm
+    AuditForm
   },
   data () {
     return {
@@ -258,7 +180,9 @@ export default {
       // 商品内容表头
       goodsColumns,
       // 商品列表数据
-      goodsList: []
+      goodsList: [],
+      // 是否服务订单
+      isServiceOrder: false
     }
   },
   beforeCreate () {
@@ -291,6 +215,7 @@ export default {
         .then(result => {
           // 当前记录
           this.record = result.data.detail
+          this.isServiceOrder = true
           // 商品列表
           this.goodsList = [this.record.orderGoods]
         })
@@ -325,12 +250,6 @@ export default {
       const { record } = this
       this.$refs.AuditForm.show(record)
     },
-
-    // 确认收货
-    handleReceipt () {
-      const { record } = this
-      this.$refs.ReceiptForm.show(record)
-    }
 
   }
 }

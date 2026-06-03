@@ -34,7 +34,7 @@ class Refund extends Basics
      * 订单页面链接
      * @var array
      */
-    private $pageUrl = 'pages/order/refund/index';
+    private $pageUrl = 'pages/refund/index';
 
     /**
      * 发送消息通知

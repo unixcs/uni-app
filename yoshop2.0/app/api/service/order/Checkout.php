@@ -19,6 +19,7 @@ use app\api\model\{
     Setting as SettingModel,
     UserCoupon as UserCouponModel,
 };
+use app\api\model\goods\ServiceRel as GoodsServiceRelModel;
 use app\api\service\{
     User as UserService,
     user\Grade as UserGradeService,
@@ -69,6 +70,7 @@ class Checkout extends BaseService
         'couponId' => 0,        // 用户的优惠券ID
         'isUsePoints' => 0,     // 是否使用积分抵扣
         'remark' => '',         // 买家留言
+        'scene' => '',          // 结算场景
     ];
 
     /**
@@ -102,6 +104,9 @@ class Checkout extends BaseService
 
     // 是否已支付 (仅积分商品兑换时)
     private bool $isPaySuccess = false;
+
+    // 是否为服务套餐直购场景
+    private bool $isServicePackage = false;
 
     /**
      * 构造函数
@@ -159,6 +164,17 @@ class Checkout extends BaseService
     }
 
     /**
+     * 标记服务套餐直购场景
+     * @param bool $isServicePackage
+     * @return $this
+     */
+    public function setServicePackage(bool $isServicePackage = true): Checkout
+    {
+        $this->isServicePackage = $isServicePackage;
+        return $this;
+    }
+
+    /**
      * 订单确认-结算台
      * @param $goodsList
      * @return array
@@ -171,7 +187,49 @@ class Checkout extends BaseService
     {
         // 订单确认-立即购买
         $this->goodsList = $goodsList;
+        $isServiceScene = ($this->param['scene'] ?? '') === 'service';
+        $this->isServicePackage = $this->isServicePackage || $this->detectServicePackage() || $this->shouldForceServicePackage();
+        if ($isServiceScene && !$this->isServicePackage) {
+            $this->setError('当前商品不支持服务下单');
+        }
         return $this->checkout();
+    }
+
+    /**
+     * 是否强制按服务单处理
+     * @return bool
+     */
+    private function shouldForceServicePackage(): bool
+    {
+        if (($this->param['scene'] ?? '') === 'service') {
+            return true;
+        }
+        return $this->getServiceContact() !== [];
+    }
+
+    /**
+     * 根据商品类型识别是否为服务单场景
+     * @return bool
+     */
+    private function detectServicePackage(): bool
+    {
+        $goodsList = is_array($this->goodsList) ? $this->goodsList : [];
+        if (empty($goodsList)) {
+            return false;
+        }
+        foreach ($goodsList as $goods) {
+            if ((int)$goods['goods_type'] === OrderTypeEnum::PHYSICAL) {
+                return false;
+            }
+            if (empty(GoodsServiceRelModel::getServiceIds((int)$goods['goods_id']))) {
+                return false;
+            }
+            $deliveryTypes = (array)($goods['delivery_type'] ?? []);
+            if (!in_array(DeliveryTypeEnum::NOTHING, $deliveryTypes)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -203,7 +261,7 @@ class Checkout extends BaseService
         // 计算订单商品的实际付款金额
         $this->setOrderGoodsPayPrice();
         // 设置订单配送信息
-        $this->setDelivery();
+        $this->isServicePackage ? $this->setServiceDelivery() : $this->setDelivery();
         // 计算订单最终金额
         $this->setOrderPayPrice();
         // 计算订单积分赠送数量
@@ -242,6 +300,18 @@ class Checkout extends BaseService
                 $this->setError("很抱歉，商品 [{$goods['goods_name']}] 不支持{$deliveryName}");
             }
         }
+    }
+
+    /**
+     * 设置服务单配送信息
+     * @return void
+     */
+    private function setServiceDelivery(): void
+    {
+        $this->param['delivery'] = DeliveryTypeEnum::NOTHING;
+        $this->orderData['delivery'] = DeliveryTypeEnum::NOTHING;
+        $this->orderData['expressPrice'] = '0.00';
+        $this->orderData['isIntraRegion'] = true;
     }
 
     /**
@@ -338,19 +408,20 @@ class Checkout extends BaseService
      */
     private function getOrderData(): array
     {
+        $isServicePackage = $this->isServicePackage;
         return [
             // 当前订单类型
             'orderType' => $this->getOrderType(),
             // 当前配送方式
             'delivery' => $this->getDeliveryType(),
             // 默认地址
-            'address' => $this->user['address_default'],
+            'address' => $isServicePackage ? [] : $this->user['address_default'],
             // 是否存在收货地址
-            'existAddress' => $this->user['address_id'] > 0,
+            'existAddress' => $isServicePackage ? false : $this->user['address_id'] > 0,
             // 配送费用
             'expressPrice' => '0.00',
             // 当前用户收货城市是否存在配送规则中
-            'isIntraRegion' => true,
+            'isIntraRegion' => $isServicePackage,
             // 是否允许使用积分抵扣
             'isAllowPoints' => false,
             // 是否使用积分抵扣
@@ -371,6 +442,9 @@ class Checkout extends BaseService
      */
     private function getDeliveryType()
     {
+        if ($this->isServicePackage) {
+            return DeliveryTypeEnum::NOTHING;
+        }
         // 系统默认的配送方式
         $setting = SettingModel::getItem(SettingEnum::DELIVERY)['delivery_type'];
         // 配送方式：实物订单
@@ -399,15 +473,17 @@ class Checkout extends BaseService
      */
     public function getSetting(): array
     {
-        // 系统支持的配送方式 (后台设置)
-        $deliveryType = SettingModel::getItem(SettingEnum::DELIVERY)['delivery_type'];
         // 积分设置
         $pointsSetting = SettingModel::getItem(SettingEnum::POINTS);
-        return [
-            'deliveryType' => $deliveryType,                       // 支持的配送方式
+        $setting = [
             'points_name' => $pointsSetting['points_name'],        // 积分名称
             'points_describe' => $pointsSetting['describe'],       // 积分说明
         ];
+        if (!$this->isServicePackage) {
+            // 系统支持的配送方式 (后台设置)
+            $setting['deliveryType'] = SettingModel::getItem(SettingEnum::DELIVERY)['delivery_type'];
+        }
+        return $setting;
     }
 
     /**
@@ -737,7 +813,11 @@ class Checkout extends BaseService
     private function createOrderEvent($order): bool
     {
         // 新增订单记录
-        $this->add($order, $this->param['remark']);
+        $this->add($order, $this->param['remark'], [
+            'contact_name' => trim((string)($this->param['contactName'] ?? '')),
+            'contact_mobile' => trim((string)($this->param['contactMobile'] ?? '')),
+            'time_preference' => trim((string)($this->param['timePreference'] ?? '')),
+        ]);
         // 保存订单数据 (根据订单类型)
         $order['orderType'] == OrderTypeEnum::PHYSICAL && $this->saveOrderByPhysical($order);
         // 保存订单商品信息
@@ -763,6 +843,9 @@ class Checkout extends BaseService
      */
     private function saveOrderByPhysical($order)
     {
+        if ($this->isServicePackage) {
+            return;
+        }
         if ($order['delivery'] == DeliveryTypeEnum::EXPRESS) {
             // 记录收货地址
             $this->saveOrderAddress($order['address']);
@@ -776,8 +859,30 @@ class Checkout extends BaseService
      */
     private function validateOrderForm(array $order): bool
     {
+        if (!$this->validateOrderFormByService()) {
+            return false;
+        }
         if ($order['orderType'] == OrderTypeEnum::PHYSICAL) {
             return $this->validateOrderFormByPhysical($order);
+        }
+        return true;
+    }
+
+    /**
+     * 表单验证：服务套餐
+     * @return bool
+     */
+    private function validateOrderFormByService(): bool
+    {
+        $contactName = trim((string)($this->param['contactName'] ?? ''));
+        $contactMobile = trim((string)($this->param['contactMobile'] ?? ''));
+        if ($contactName === '') {
+            $this->error = '请填写联系人';
+            return false;
+        }
+        if (!preg_match('/^1\d{10}$/', $contactMobile)) {
+            $this->error = '请填写正确的联系电话';
+            return false;
         }
         return true;
     }
@@ -809,12 +914,28 @@ class Checkout extends BaseService
     }
 
     /**
+     * 获取服务联系信息
+     * @return array
+     */
+    private function getServiceContact(): array
+    {
+        return array_filter([
+            'contact_name' => trim((string)($this->param['contactName'] ?? '')),
+            'contact_mobile' => trim((string)($this->param['contactMobile'] ?? '')),
+            'time_preference' => trim((string)($this->param['timePreference'] ?? '')),
+        ], static function ($value) {
+            return $value !== '' && $value !== null;
+        });
+    }
+
+    /**
      * 新增订单记录
      * @param $order
      * @param string $remark
+     * @param array $serviceContact
      * @return void
      */
-    private function add($order, string $remark = ''): void
+    private function add($order, string $remark = '', array $serviceContact = []): void
     {
         // 当前订单是否存在和使用积分抵扣
         $isExistPointsDeduction = $this->isExistPointsDeduction($order);
@@ -830,17 +951,21 @@ class Checkout extends BaseService
             'points_money' => $isExistPointsDeduction ? $order['pointsMoney'] : 0,
             'points_num' => $isExistPointsDeduction ? $order['pointsNum'] : 0,
             'pay_price' => $order['orderPayPrice'],
-            'delivery_type' => $order['delivery'],
+            'delivery_type' => $this->isServicePackage ? DeliveryTypeEnum::NOTHING : $order['delivery'],
             'buyer_remark' => trim($remark),
             'order_source' => $this->orderSource['source'],
             'order_source_id' => $this->orderSource['sourceId'],
-            'order_source_data' => $this->orderSource['sourceData'],
+            'order_source_data' => array_merge($this->orderSource['sourceData'], [
+                'service_contact' => array_filter($serviceContact, static function ($value) {
+                    return $value !== '' && $value !== null;
+                }),
+            ]),
             'points_bonus' => $order['pointsBonus'],
             'order_status' => OrderStatusEnum::NORMAL,
             'platform' => \getPlatform(),
             'store_id' => $this->storeId,
         ];
-        if ($order['delivery'] == DeliveryTypeEnum::EXPRESS) {
+        if (!$this->isServicePackage && $order['delivery'] == DeliveryTypeEnum::EXPRESS) {
             $data['express_price'] = $order['expressPrice'];
         }
         // 保存订单记录

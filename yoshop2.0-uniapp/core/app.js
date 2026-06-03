@@ -56,7 +56,6 @@ export const getTabBarLinks = () => {
   const tabBarLinks = [
     'pages/index/index',
     'pages/category/index',
-    'pages/cart/index',
     'pages/user/index'
   ]
   return tabBarLinks
@@ -163,18 +162,6 @@ export const setCartTotalNum = (value) => {
  * 该方法只能在tabbar页面中调用, 其他页面调用会报错
  */
 export const setCartTabBadge = () => {
-  const cartTabbarIndex = 2
-  const cartTotal = getCartTotalNum()
-  if (cartTotal > 0) {
-    uni.setTabBarBadge({
-      index: cartTabbarIndex,
-      text: `${cartTotal}`
-    })
-  } else {
-    uni.removeTabBarBadge({
-      index: cartTabbarIndex
-    })
-  }
   return
 }
 
@@ -300,6 +287,9 @@ export const onLink = linkObj => {
 
 // style变量样式转为字符串 (因小程序端不支持styleObject语法)
 export const styleObj2Str = appTheme => {
+  if (!appTheme || typeof appTheme !== 'object') {
+    return ''
+  }
   let str = ''
   for (const index in appTheme) {
     const name = util.formatToLine(index)

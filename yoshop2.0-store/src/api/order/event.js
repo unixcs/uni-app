@@ -7,7 +7,10 @@ const api = {
   updateAddress: '/order.event/updateAddress',
   confirmCancel: '/order.event/confirmCancel',
   delete: '/order.event/delete',
-  printer: '/order.event/printer'
+  printer: '/order.event/printer',
+  startService: '/order.event/startService',
+  completeService: '/order.event/completeService',
+  refundBeforeService: '/order.event/refundBeforeService'
 }
 
 /**
@@ -81,5 +84,29 @@ export function printer (data) {
     url: api.printer,
     method: 'post',
     data
+  })
+}
+
+export function startService (orderId) {
+  return axios({
+    url: api.startService,
+    method: 'post',
+    params: { orderId }
+  })
+}
+
+export function completeService (orderId) {
+  return axios({
+    url: api.completeService,
+    method: 'post',
+    params: { orderId }
+  })
+}
+
+export function refundBeforeService (orderId) {
+  return axios({
+    url: api.refundBeforeService,
+    method: 'post',
+    params: { orderId }
   })
 }

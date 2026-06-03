@@ -147,8 +147,26 @@ class Auth
             // 获取已分配的API的ID集
             $apiIds = MenuApiModel::getApiIds($menuIds);
             // 获取当前角色所有权限链接
-            $this->apiUrls = ApiModel::getApiUrls($apiIds);
+            $this->apiUrls = array_values(array_filter(
+                ApiModel::getApiUrls($apiIds),
+                fn($url) => !static::isLegacyDeliveryApiUrl((string)$url)
+            ));
         }
         return $this->apiUrls;
+    }
+
+    /**
+     * 是否为旧版物理商品发货API
+     * @param string $url
+     * @return bool
+     */
+    private static function isLegacyDeliveryApiUrl(string $url): bool
+    {
+        foreach (MenuApiModel::getLegacyDeliveryApiPrefixes() as $prefix) {
+            if ($url !== '' && str_starts_with($url, $prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -24,6 +24,11 @@ use app\store\model\Order as OrderModel;
  */
 class Event extends Controller
 {
+    private function disabled(): Json
+    {
+        return $this->renderError('服务订单不支持地址、物流和发货操作');
+    }
+
     /**
      * 修改订单价格
      * @param int $orderId
@@ -59,11 +64,7 @@ class Event extends Controller
      */
     public function updateAddress(int $orderId): Json
     {
-        $model = OrderModel::detail($orderId);
-        if ($model->updateAddress($this->postForm())) {
-            return $this->renderSuccess('操作成功');
-        }
-        return $this->renderError($model->getError() ?: '操作失败');
+        return $this->disabled();
     }
 
     /**
@@ -77,11 +78,7 @@ class Event extends Controller
      */
     public function printer(int $orderId): Json
     {
-        $model = OrderModel::detail($orderId);
-        if ($model->printer($this->postForm())) {
-            return $this->renderSuccess('操作成功');
-        }
-        return $this->renderError($model->getError() ?: '操作失败');
+        return $this->disabled();
     }
 
     /**
@@ -108,6 +105,48 @@ class Event extends Controller
         $model = OrderModel::detail($orderId);
         if ($model->setDelete()) {
             return $this->renderSuccess('删除成功');
+        }
+        return $this->renderError($model->getError() ?: '操作失败');
+    }
+
+    /**
+     * 开始服务
+     * @param int $orderId
+     * @return Json
+     */
+    public function startService(int $orderId): Json
+    {
+        $model = OrderModel::detail($orderId);
+        if ($model->startService()) {
+            return $this->renderSuccess('操作成功');
+        }
+        return $this->renderError($model->getError() ?: '操作失败');
+    }
+
+    /**
+     * 完成服务
+     * @param int $orderId
+     * @return Json
+     */
+    public function completeService(int $orderId): Json
+    {
+        $model = OrderModel::detail($orderId);
+        if ($model->completeService()) {
+            return $this->renderSuccess('操作成功');
+        }
+        return $this->renderError($model->getError() ?: '操作失败');
+    }
+
+    /**
+     * 服务开始前退款
+     * @param int $orderId
+     * @return Json
+     */
+    public function refundBeforeService(int $orderId): Json
+    {
+        $model = OrderModel::detail($orderId);
+        if ($model->refundBeforeService()) {
+            return $this->renderSuccess('操作成功');
         }
         return $this->renderError($model->getError() ?: '操作失败');
     }

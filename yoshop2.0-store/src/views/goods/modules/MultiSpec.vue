@@ -1,8 +1,8 @@
 <template>
   <div>
-    <a-form-item label="商品规格" :labelCol="labelCol" :wrapperCol="wrapperCol">
+    <a-form-item label="套餐规格" :labelCol="labelCol" :wrapperCol="wrapperCol">
       <div v-if="true" class="form-item-help" style="line-height: 36px">
-        <small>最多添加3个商品规格组，生成的SKU数量不能超出50个</small>
+        <small>最多添加3个套餐规格组，生成的SKU数量不能超出50个</small>
       </div>
       <!-- 规格组 -->
       <div class="spec-group" v-for="(item, index) in multiSpecData.specList" :key="index">
@@ -57,7 +57,7 @@
     </a-form-item>
     <a-form-item
       v-show="multiSpecData.skuList.length"
-      label="SKU列表"
+      label="套餐选项列表"
       :labelCol="labelCol"
       :wrapperCol="wrapperCol"
     >
@@ -66,7 +66,7 @@
         <span class="title">批量设置:</span>
         <a-input-number
           v-model="multiSpecData.skuBatchForm.goods_price"
-          placeholder="商品价格"
+          placeholder="套餐价格"
           :min="0.01"
           :precision="2"
         />
@@ -82,16 +82,10 @@
           :min="0"
           :precision="0"
         />
-        <a-input-number
-          v-model="multiSpecData.skuBatchForm.goods_weight"
-          placeholder="商品重量"
-          :min="0"
-          :precision="2"
-        />
-        <a-input v-model="multiSpecData.skuBatchForm.goods_sku_no" placeholder="sku编码" />
+        <a-input v-model="multiSpecData.skuBatchForm.goods_sku_no" placeholder="套餐编码" />
         <a-button @click="handleSkuBatch">立即设置</a-button>
       </div>
-      <!-- sku列表table -->
+      <!-- 套餐选项列表table -->
       <a-table
         class="sku-list"
         :columns="multiSpecData.skuColumns"
@@ -108,7 +102,7 @@
             :width="50"
           />
         </template>
-        <!-- 商品价格 -->
+        <!-- 套餐价格 -->
         <template slot="goods_price" slot-scope="text, item">
           <a-input-number v-model="item.goods_price" size="small" :min="0.01" :precision="2" />
         </template>
@@ -120,11 +114,7 @@
         <template slot="stock_num" slot-scope="text, item">
           <a-input-number v-model="item.stock_num" size="small" :min="0" :precision="0" />
         </template>
-        <!-- 商品重量 -->
-        <template slot="goods_weight" slot-scope="text, item">
-          <a-input-number v-model="item.goods_weight" size="small" :min="0" :precision="2" />
-        </template>
-        <!-- sku编码 -->
+        <!-- 套餐编码 -->
         <template slot="goods_sku_no" slot-scope="text, item">
           <a-input v-model="item.goods_sku_no" size="small" />
         </template>
@@ -145,9 +135,9 @@ export default {
   props: {
     // 默认的规格列表
     defaultSpecList: PropTypes.array.def([]),
-    // 默认的SKU列表
+    // 默认的套餐选项列表
     defaultSkuList: PropTypes.array.def([]),
-    // 商品规格是否锁定(锁定状态下不允许编辑规格)
+    // 套餐规格是否锁定(锁定状态下不允许编辑规格)
     isSpecLocked: PropTypes.bool.def(false)
   },
   data () {
@@ -156,12 +146,12 @@ export default {
       labelCol: { span: 3 },
       // 输入框布局属性
       wrapperCol: { span: 21 },
-      // 商品多规格模型
+      // 套餐多规格模型
       MultiSpecModel: new MultiSpecModel(),
       multiSpecData: {
         // 规格列表
         specList: [],
-        // SKU列表
+        // 套餐选项列表
         skuList: []
       }
     }
@@ -276,7 +266,7 @@ export default {
 
 </script>
 <style lang="less" scoped>
-// 商品多规格
+// 套餐多规格
 .spec-group {
   width: 895px;
   margin-bottom: 15px;

@@ -14,7 +14,7 @@ namespace app\store\service\order;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use app\store\model\{Order as OrderModel, order\Export as ExportModel, OrderAddress as OrderAddressModel};
+use app\store\model\{Order as OrderModel, order\Export as ExportModel};
 use app\common\library\helper;
 use app\common\service\BaseService;
 use app\common\service\Goods as GoodsService;
@@ -22,9 +22,6 @@ use app\common\enum\order\{
     PayStatus as PayStatusEnum,
     OrderSource as OrderSourceEnum,
     OrderStatus as OrderStatusEnum,
-    DeliveryType as DeliveryTypeEnum,
-    ReceiptStatus as ReceiptStatusEnum,
-    DeliveryStatus as DeliveryStatusEnum,
     export\ExportStatus as ExportStatusEnum
 };
 use app\common\enum\payment\Method as PaymentMethodEnum;
@@ -175,29 +172,20 @@ class Export extends BaseService
         return [
             'order_id' => '订单ID',
             'order_no' => '订单号',
-            'goods_detail' => '商品信息',
-            'total_price' => '商品总额',
-            'coupon_money' => '优惠券抵扣金额',
-            'points_money' => '积分抵扣金额',
+            'goods_detail' => '服务信息',
+            'total_price' => '服务总额',
             'update_price' => '后台改价',
-            'express_price' => '运费金额',
             'pay_price' => '订单实付款',
             'pay_method' => '支付方式',
             'create_time' => '下单时间',
             'user_info' => '买家信息',
-            'buyer_remark' => '买家留言',
-            'delivery_type' => '配送方式',
-            'receipt_name' => '收货人',
-            'receipt_phone' => '联系电话',
-            'receipt_address' => '收货地址',
+            'buyer_remark' => '买家备注',
+            'contact_name' => '联系人',
+            'contact_mobile' => '联系电话',
+            'time_preference' => '服务时间偏好',
             'pay_status' => '付款状态',
             'pay_time' => '付款时间',
-            'delivery_status' => '发货状态',
-            'delivery_time' => '发货时间',
-            'receipt_status' => '收货状态',
-            'receipt_time' => '收货时间',
             'order_status' => '订单状态',
-            'is_comment' => '是否已评价',
             'order_source' => '订单来源',
             'out_trade_no' => '第三方支付订单号',
             'trade_no' => '支付流水号',
@@ -237,27 +225,18 @@ class Export extends BaseService
                 'order_no' => $this->filterValue($order['order_no']),
                 'goods_detail' => $this->filterGoodsInfo($order),
                 'total_price' => $this->filterValue($order['total_price']) . '元',
-                'coupon_money' => $this->filterValue($order['coupon_money']) . '元',
-                'points_money' => $this->filterValue($order['points_money']) . '元',
                 'update_price' => "{$order['update_price']['symbol']}{$order['update_price']['value']}元",
-                'express_price' => $this->filterValue($order['express_price']) . '元',
                 'pay_price' => $this->filterValue($order['pay_price']) . '元',
                 'pay_method' => $this->filterPayMethod($order['pay_method']),
                 'create_time' => $this->filterValue($order['create_time']),
                 'user_info' => $this->filterValue($order['user']['nick_name']),
                 'buyer_remark' => $this->filterValue($order['buyer_remark']),
-                'delivery_type' => DeliveryTypeEnum::data()[$order['delivery_type']]['name'],
-                'receipt_name' => !empty($order['address']) ? $this->filterValue($order['address']['name']) : '',
-                'receipt_phone' => !empty($order['address']) ? $this->filterValue($order['address']['phone']) : '',
-                'receipt_address' => !empty($order['address']) ? OrderAddressModel::fullAddress($order['address']) : '',
+                'contact_name' => $this->filterValue($order['contact_name']),
+                'contact_mobile' => $this->filterValue($order['contact_mobile']),
+                'time_preference' => $this->filterValue($order['time_preference']),
                 'pay_status' => PayStatusEnum::data()[$order['pay_status']]['name'],
                 'pay_time' => $order['pay_time'],
-                'delivery_status' => DeliveryStatusEnum::data()[$order['delivery_status']]['name'],
-                'delivery_time' => $order['delivery_time'] ?: '',
-                'receipt_status' => ReceiptStatusEnum::data()[$order['receipt_status']]['name'],
-                'receipt_time' => $order['receipt_time'] ?: '',
-                'order_status' => OrderStatusEnum::data()[$order['order_status']]['name'],
-                'is_comment' => $order['is_comment'] ? '是' : '否',
+                'order_status' => $order['state_text'] ?: OrderStatusEnum::data()[$order['order_status']]['name'],
                 'order_source' => OrderSourceEnum::data()[$order['order_source']]['name'],
                 'out_trade_no' => !empty($order['trade']) ? $this->filterValue($order['trade']['out_trade_no']) : '',
                 'trade_no' => !empty($order['trade']) ? $this->filterValue($order['trade']['trade_no']) : '',
@@ -286,13 +265,13 @@ class Export extends BaseService
     {
         $content = '';
         foreach ($order['goods'] as $key => $goods) {
-            $content .= ($key + 1) . ".商品名称：{$goods['goods_name']}\n";
+            $content .= ($key + 1) . ".服务名称：{$goods['goods_name']}\n";
             if (!empty($goods['goods_props'])) {
                 $goodsAttr = GoodsService::goodsPropsToAttr($goods['goods_props']);
-                $content .= "　商品规格：{$goodsAttr}\n";
+                $content .= "　服务选项：{$goodsAttr}\n";
             }
             $content .= "　购买数量：{$goods['total_num']}\n";
-            $content .= "　商品总价：{$goods['total_price']}元\n\n";
+            $content .= "　服务总价：{$goods['total_price']}元\n\n";
         }
         return $content;
     }

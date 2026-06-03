@@ -30,6 +30,30 @@ class Menu extends MenuModel
     ];
 
     /**
+     * 过滤旧版物理商品发货菜单
+     * @param $menuList
+     * @param int $parentId
+     * @return array
+     */
+    protected function getTreeData($menuList, int $parentId = 0): array
+    {
+        $data = [];
+        foreach ($menuList as $key => $item) {
+            if ($item['parent_id'] == $parentId) {
+                if ($this->isLegacyDeliveryMenu($item)) {
+                    unset($menuList[$key]);
+                    continue;
+                }
+                $children = $this->getTreeData($menuList, (int)$item['menu_id']);
+                !empty($children) && $item['children'] = $children;
+                $data[] = $item;
+                unset($menuList[$key]);
+            }
+        }
+        return $data;
+    }
+
+    /**
      * 根据菜单ID集获取列表
      * @param array $menuIds
      * @return mixed
