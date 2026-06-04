@@ -67,6 +67,7 @@
   import * as MyCouponApi from '@/api/myCoupon'
   import { CouponTypeEnum } from '@/common/enum/coupon'
   import Empty from '@/components/empty'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   export default {
     components: {
@@ -87,6 +88,11 @@
      * 生命周期函数--监听页面加载
      */
     onLoad(options) {
+      if (isH5 || isMpWeixin || isWeixinOfficial) {
+        uni.showToast({ title: '该功能已关闭', icon: 'none' })
+        setTimeout(() => uni.navigateBack({ delta: 1 }), 1200)
+        return
+      }
       // 获取优惠券列表
       this.getCouponList()
     },

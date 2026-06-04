@@ -39,7 +39,7 @@
                         <text class="value">{{ dataItm.line_price_min }}</text>
                       </text>
                     </view>
-                    <view v-show="inArray('cartBtn', itemStyle.show) && itemStyle.column < 3" class="action">
+                    <view v-if="showCartButton && inArray('cartBtn', itemStyle.show) && itemStyle.column < 3" class="action">
                       <view class="btn-cart" :style="{ color: itemStyle.btnCartColor }" @click.stop="handleAddCart(dataItm)">
                         <text class="cart-icon iconfont" :class="[`icon-jiagou${itemStyle.btnCartStyle}`]"></text>
                       </view>
@@ -78,7 +78,7 @@
                     <text class="value">{{ dataItm.line_price_min }}</text>
                   </text>
                 </view>
-                <view v-show="inArray('cartBtn', itemStyle.show) && itemStyle.column < 3" class="action">
+                <view v-if="showCartButton && inArray('cartBtn', itemStyle.show) && itemStyle.column < 3" class="action">
                   <view class="btn-cart" :style="{ color: itemStyle.btnCartColor }" @click.stop="handleAddCart(dataItm)">
                     <text class="cart-icon iconfont" :class="[`icon-jiagou${itemStyle.btnCartStyle}`]"></text>
                   </view>
@@ -98,6 +98,7 @@
   import { inArray } from '@/utils/util'
   import { setCartTabBadge } from '@/core/app'
   import AddCartPopup from '@/components/add-cart-popup'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   export default {
     components: {
@@ -110,7 +111,10 @@
       dataList: Array
     },
     data() {
-      return { inArray }
+      return {
+        inArray,
+        showCartButton: !(isH5 || isMpWeixin || isWeixinOfficial)
+      }
     },
     methods: {
 

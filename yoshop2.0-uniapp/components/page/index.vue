@@ -62,7 +62,7 @@
         <DiyOfficialAccount />
       </block>
       <!-- 优惠券 -->
-      <block v-if="item.type === 'coupon'">
+      <block v-if="showCouponBlock && item.type === 'coupon'">
         <Coupon :itemStyle="item.style" :params="item.params" :dataList="item.data" />
       </block>
       <!-- 图片组 -->
@@ -82,6 +82,7 @@
 </template>
 
 <script>
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
   import Search from './diyComponents/search'
   import Images from './diyComponents/image'
   import Banner from './diyComponents/banner'
@@ -137,6 +138,11 @@
         }
       }
     },
+    computed: {
+      showCouponBlock() {
+        return !(isH5 || isMpWeixin || isWeixinOfficial)
+      }
+    }
   }
 </script>
 <style lang="scss">

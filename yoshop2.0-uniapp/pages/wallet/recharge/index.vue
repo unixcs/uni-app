@@ -86,6 +86,7 @@
   import { PayMethodEnum } from '@/common/enum/payment'
   import { inArray, urlEncode } from '@/utils/util'
   import { Alipay, Wechat } from '@/core/payment'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   // 支付方式对应的图标
   const PayMethodIconEnum = {
@@ -156,6 +157,10 @@
 
     methods: {
 
+      shouldHideReviewUi() {
+        return isH5 || isMpWeixin || isWeixinOfficial
+      },
+
       // 选择充值套餐
       onSelectPlan(planId) {
         this.selectedPlanId = planId
@@ -183,7 +188,15 @@
               app.setting = result.data.setting
               app.personal = result.data.personal
               app.planList = result.data.planList
-              app.methods = result.data.paymentMethods
+              app.methods = app.shouldHideReviewUi()
+                ? result.data.paymentMethods.filter(item => item.method === PayMethodEnum.WECHAT.value)
+                : result.data.paymentMethods
+              if (app.shouldHideReviewUi() && !app.methods.length) {
+                app.isLoading = false
+                app.$toast('当前仅支持微信支付')
+                setTimeout(() => uni.navigateBack({ delta: 1 }), 1200)
+                return
+              }
               app.isLoading = false
               // 默认选中的支付方式
               app.setDefaultPayType()
@@ -197,8 +210,11 @@
 
       // 默认选中的支付方式
       setDefaultPayType() {
-        if (!this.curPaymentItem) {
-          this.handleSelectPayType(0)
+        if (!this.curPaymentItem && this.methods.length) {
+          const defaultIndex = this.shouldHideReviewUi()
+            ? this.methods.findIndex(item => item.method === PayMethodEnum.WECHAT.value)
+            : this.methods.findIndex(item => item.is_default == true)
+          this.handleSelectPayType(defaultIndex > -1 ? defaultIndex : 0)
         }
       },
 

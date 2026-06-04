@@ -68,8 +68,10 @@
   import { getEmptyPaginateObj, getMoreListData } from '@/core/app'
   import * as MyCouponApi from '@/api/myCoupon'
   import { CouponTypeEnum } from '@/common/enum/coupon'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   const pageSize = 15
+  const shouldHideReviewUi = isH5 || isMpWeixin || isWeixinOfficial
   const tabs = [{
     name: `未使用`,
     value: 'isUnused'
@@ -96,7 +98,7 @@
         // 上拉加载配置
         upOption: {
           // 首次自动执行
-          auto: true,
+          auto: !shouldHideReviewUi,
           // 每页数据的数量; 默认10
           page: { size: pageSize },
           // 数量要大于4条才显示无更多数据
@@ -113,7 +115,11 @@
      * 生命周期函数--监听页面加载
      */
     onLoad(options) {
-
+      if (isH5 || isMpWeixin || isWeixinOfficial) {
+        uni.showToast({ title: '该功能已关闭', icon: 'none' })
+        setTimeout(() => uni.navigateBack({ delta: 1 }), 1200)
+        return
+      }
     },
 
     methods: {

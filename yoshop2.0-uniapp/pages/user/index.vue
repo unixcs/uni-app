@@ -46,7 +46,7 @@
     </view>
 
     <!-- 我的钱包 -->
-    <view v-if="$checkModules(['market-recharge', 'market-points', 'market-coupon'])" class="my-asset">
+    <view v-if="showAssetModule && $checkModules(['market-recharge', 'market-points', 'market-coupon'])" class="my-asset">
       <view class="asset-left flex-box dis-flex flex-x-around">
         <view v-if="$checkModule('market-recharge')" class="asset-left-item" style="max-width: 200rpx;" @click="onTargetWallet">
           <view class="item-value dis-flex flex-x-center">
@@ -154,6 +154,7 @@
   import * as UserApi from '@/api/user'
   import * as OrderApi from '@/api/order'
   import { checkLogin, filterModules } from '@/core/app'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   // 订单操作
   const orderNavbar = [
@@ -204,7 +205,16 @@
         // 订单操作
         orderNavbar,
         // 当前用户待处理的订单数量
-        todoCounts: { payment: 0, contact: 0, in_service: 0 }
+        todoCounts: { payment: 0, contact: 0, in_service: 0 },
+        hiddenServiceIds: ['coupon', 'myCoupon', 'points']
+      }
+    },
+    computed: {
+      showAssetModule() {
+        return !(isH5 || isMpWeixin || isWeixinOfficial)
+      },
+      shouldHideReviewUi() {
+        return isH5 || isMpWeixin || isWeixinOfficial
       }
     },
 
@@ -256,6 +266,9 @@
         service.forEach(item => {
           // 默认开启
           item.enabled = true
+          if (app.shouldHideReviewUi && app.hiddenServiceIds.includes(item.id)) {
+            item.enabled = false
+          }
           // 我的积分
           if (item.id === 'points') {
             item.name = '我的' + app.setting[SettingKeyEnum.POINTS.value].points_name

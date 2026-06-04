@@ -59,6 +59,7 @@
   import { PayMethodEnum } from '@/common/enum/payment'
   import { PayStatusEnum } from '@/common/enum/order'
   import * as CashierApi from '@/api/cashier'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   // 支付方式对应的图标
   const PayMethodIconEnum = {
@@ -137,6 +138,10 @@
 
     methods: {
 
+      shouldHideReviewUi() {
+        return isH5 || isMpWeixin || isWeixinOfficial
+      },
+
       // 获取收银台信息
       getCashierInfo() {
         const app = this
@@ -145,7 +150,15 @@
           .then(result => {
             app.order = result.data.order
             app.personal = result.data.personal
-            app.methods = result.data.paymentMethods
+            app.methods = app.shouldHideReviewUi()
+              ? result.data.paymentMethods.filter(item => item.method === PayMethodEnum.WECHAT.value)
+              : result.data.paymentMethods
+            if (app.shouldHideReviewUi() && !app.methods.length) {
+              app.isLoading = false
+              app.$toast('当前仅支持微信支付')
+              setTimeout(() => uni.navigateBack({ delta: 1 }), 1200)
+              return
+            }
             app.isLoading = false
             app.setDefaultPayType()
             app.checkOrderPayStatus()
@@ -161,7 +174,9 @@
         const app = this
         if (app.disabled) return
         if (app.curPaymentItem) return
-        const defaultIndex = app.methods.findIndex(item => item.is_default == true)
+        const defaultIndex = app.shouldHideReviewUi()
+          ? app.methods.findIndex(item => item.method === PayMethodEnum.WECHAT.value)
+          : app.methods.findIndex(item => item.is_default == true)
         defaultIndex > -1 && app.handleSelectPayType(defaultIndex)
       },
 

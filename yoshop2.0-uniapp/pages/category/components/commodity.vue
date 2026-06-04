@@ -46,7 +46,7 @@
                       <text class="price-x">¥{{ item.goods_price_min }}</text>
                       <text v-if="item.line_price_min > 0" class="price-y">¥{{ item.line_price_min }}</text>
                     </view>
-                    <add-cart-btn v-if="setting.showAddCart" :btnStyle="setting.cartStyle" @handleAddCart="handleAddCart(item)" />
+                    <add-cart-btn v-if="showAddCartButton && setting.showAddCart" :btnStyle="setting.cartStyle" @handleAddCart="handleAddCart(item)" />
                   </view>
                 </view>
               </view>
@@ -69,6 +69,7 @@
   import AddCartBtn from '@/components/add-cart-btn'
   import AddCartPopup from '@/components/add-cart-popup'
   import * as GoodsApi from '@/api/goods'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   const pageSize = 15
 
@@ -97,6 +98,7 @@
     },
     data() {
       return {
+        showAddCartButton: !(isH5 || isMpWeixin || isWeixinOfficial),
         // 一级分类：指针
         curIndex: -1,
         // 是否显示子分类

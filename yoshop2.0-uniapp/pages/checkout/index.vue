@@ -39,17 +39,16 @@
 
       <view class="flow-all-money b-f m-top20">
         <view class="flow-all-list dis-flex"><text class="flex-five">商品金额：</text><view class="flex-five t-r"><text class="col-m">￥{{ order.orderTotalPrice }}</text></view></view>
-        <view v-if="$checkModule('market-coupon')" class="flow-all-list dis-flex"><text class="flex-five">优惠券：</text><view class="flex-five t-r"><view v-if="order.couponList.length > 0" @click="handleShowPopup()"><text class="col-m" v-if="order.couponId > 0">-￥{{ order.couponMoney }}</text><text class="col-m" v-else>有{{ order.couponList.length }}张优惠券</text><text class="right-arrow iconfont icon-arrow-right"></text></view><text v-else>无优惠券可用</text></view></view>
+        <view v-if="showCouponEntry && $checkModule('market-coupon')" class="flow-all-list dis-flex"><text class="flex-five">优惠券：</text><view class="flex-five t-r"><view v-if="order.couponList.length > 0" @click="handleShowPopup()"><text class="col-m" v-if="order.couponId > 0">-￥{{ order.couponMoney }}</text><text class="col-m" v-else>有{{ order.couponList.length }}张优惠券</text><text class="right-arrow iconfont icon-arrow-right"></text></view><text v-else>无优惠券可用</text></view></view>
       </view>
 
       <view class="flow-fixed-footer b-f m-top10">
         <view class="dis-flex chackout-box">
           <view class="chackout-left pl-12">应付：<text class="col-m">￥{{ order.orderPayPrice }}</text></view>
           <view class="chackout-right" @click="onSubmitOrder()"><view class="flow-btn f-32" :class="{ disabled }">提交订单</view></view>
-        </view>
       </view>
 
-      <u-popup v-model="showPopup" mode="bottom">
+      <u-popup v-if="showCouponEntry" v-model="showPopup" mode="bottom">
         <view class="popup__coupon">
           <view class="coupon__title f-30">选择优惠券</view>
           <scroll-view :scroll-y="true" style="height: 650rpx;">
@@ -69,6 +68,8 @@
         </view>
       </u-popup>
     </view>
+
+    </view>
     <u-toast ref="uToast" />
   </view>
 </template>
@@ -77,6 +78,7 @@
   import * as Verify from '@/utils/verify'
   import * as CheckoutApi from '@/api/checkout'
   import { CouponTypeEnum } from '@/common/enum/coupon'
+  import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   const getCheckoutApi = () => CheckoutApi
   const PHYSICAL_ORDER_TYPE = 10
@@ -87,7 +89,11 @@
     : { goodsId: options.goodsId, goodsNum: options.goodsNum, goodsSkuId: options.goodsSkuId }
 
   export default {
-    computed: {},
+    computed: {
+      showCouponEntry() {
+        return !(isH5 || isMpWeixin || isWeixinOfficial)
+      }
+    },
     data() { return { CouponTypeEnum, options: {}, selectCouponId: 0, remark: '', contactName: '', contactMobile: '', timePreference: '', disabled: false, showPopup: false, order: {}, personal: {}, setting: {} } },
     onLoad(options) {
       this.options = options
