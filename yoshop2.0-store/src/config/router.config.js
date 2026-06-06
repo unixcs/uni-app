@@ -187,6 +187,11 @@ export const asyncRouterMap = [
             meta: { title: '全部订单', keepAlive: false, permission: ['/order/list/all'] }
           },
           {
+            path: '/order/list/pay',
+            component: () => import(/* webpackChunkName: "order" */ '@/views/order/Index'),
+            meta: { title: '待付款', keepAlive: false, permission: ['/order/list/all'] }
+          },
+          {
             path: '/order/list/contact',
             component: () => import(/* webpackChunkName: "order" */ '@/views/order/Index'),
             meta: { title: '待联系', keepAlive: false, permission: ['/order/list/all'] }

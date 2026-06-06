@@ -11,6 +11,7 @@ use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use app\common\enum\order\PayStatus as PayStatusEnum;
 use app\common\enum\order\ReceiptStatus as ReceiptStatusEnum;
+use app\common\enum\order\refund\AuditStatus as RefundAuditStatusEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
@@ -247,25 +248,44 @@ class ServiceOrderE2eAutomation extends Command
         $paidOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'PAID');
         $refundedOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'REFUND');
         $completedOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'COMPLETE');
+        $auditApprovedOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'AUDIT_APPROVE');
+        $auditRejectedOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'AUDIT_REJECT');
+        $duplicateRefundOrderId = $this->createRealServiceOrder($client, $config['h5_url'], $tokens['h5'], $goods, $runId, 'DUPLICATE');
 
         $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $paidOrderId);
         $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $refundedOrderId);
         $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $completedOrderId);
+        $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $auditApprovedOrderId);
+        $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $auditRejectedOrderId);
+        $this->payOrderWithBalance($client, $config['h5_url'], $tokens['h5'], $duplicateRefundOrderId);
 
         $backendBase = $this->getBackendApiBase($config['backend_url']);
 
         $this->refundBeforeService($client, $backendBase, $tokens['backend'], $refundedOrderId);
+        $this->startService($client, $backendBase, $tokens['backend'], $auditApprovedOrderId);
+        $approvedRefundId = $this->applyRefund($client, $config['h5_url'], $tokens['h5'], $auditApprovedOrderId);
+        $this->auditRefund($client, $backendBase, $tokens['backend'], $approvedRefundId, RefundAuditStatusEnum::REVIEWED);
+
+        $this->startService($client, $backendBase, $tokens['backend'], $auditRejectedOrderId);
+        $rejectedRefundId = $this->applyRefund($client, $config['h5_url'], $tokens['h5'], $auditRejectedOrderId);
+        $this->auditRefund($client, $backendBase, $tokens['backend'], $rejectedRefundId, RefundAuditStatusEnum::REJECTED, 'E2E reject');
+
+        $this->startService($client, $backendBase, $tokens['backend'], $duplicateRefundOrderId);
+        $duplicateRefundFirstId = $this->applyRefund($client, $config['h5_url'], $tokens['h5'], $duplicateRefundOrderId);
+        $this->applyRefundExpectFailure($client, $config['h5_url'], $tokens['h5'], $duplicateRefundOrderId, '当前订单已存在进行中的售后单');
+
         $this->startService($client, $backendBase, $tokens['backend'], $completedOrderId);
         $this->completeService($client, $backendBase, $tokens['backend'], $completedOrderId);
+        $this->applyRefundExpectFailure($client, $config['h5_url'], $tokens['h5'], $completedOrderId, '当前服务阶段不允许申请退款');
 
         $messages = [];
 
         if (in_array('h5', $checks, true)) {
-            $this->assertRealH5Scenarios($client, $config['h5_url'], $tokens['h5'], $unpaidOrderId, $paidOrderId, $refundedOrderId, $completedOrderId, $runId);
+            $this->assertRealH5Scenarios($client, $config['h5_url'], $tokens['h5'], $unpaidOrderId, $paidOrderId, $refundedOrderId, $completedOrderId, $auditApprovedOrderId, $auditRejectedOrderId, $duplicateRefundOrderId, $runId);
             $messages[] = 'h5 real-order checks ok';
         }
         if (in_array('backend', $checks, true)) {
-            $this->assertRealBackendScenarios($client, $backendBase, $tokens['backend'], $unpaidOrderId, $paidOrderId, $refundedOrderId, $completedOrderId, $runId);
+            $this->assertRealBackendScenarios($client, $backendBase, $tokens['backend'], $unpaidOrderId, $paidOrderId, $refundedOrderId, $completedOrderId, $auditApprovedOrderId, $auditRejectedOrderId, $duplicateRefundOrderId, $runId);
             $messages[] = 'backend real-order checks ok';
         }
         if (in_array('mp-weixin', $checks, true)) {
@@ -282,6 +302,14 @@ class ServiceOrderE2eAutomation extends Command
                 'paid' => $paidOrderId,
                 'refunded' => $refundedOrderId,
                 'completed' => $completedOrderId,
+                'audit_approved' => $auditApprovedOrderId,
+                'audit_rejected' => $auditRejectedOrderId,
+                'duplicate_refund' => $duplicateRefundOrderId,
+            ],
+            'refund_ids' => [
+                'approved' => $approvedRefundId,
+                'rejected' => $rejectedRefundId,
+                'duplicate_first' => $duplicateRefundFirstId,
             ],
         ]);
 
@@ -671,12 +699,15 @@ class ServiceOrderE2eAutomation extends Command
         }
     }
 
-    private function assertRealH5Scenarios($client, string $baseUrl, string $token, int $unpaidOrderId, int $paidOrderId, int $refundedOrderId, int $completedOrderId, string $runId): void
+    private function assertRealH5Scenarios($client, string $baseUrl, string $token, int $unpaidOrderId, int $paidOrderId, int $refundedOrderId, int $completedOrderId, int $auditApprovedOrderId, int $auditRejectedOrderId, int $duplicateRefundOrderId, string $runId): void
     {
         $unpaid = $this->fetchOrderDetail($client, $baseUrl, $unpaidOrderId, $token, true);
         $paid = $this->fetchOrderDetail($client, $baseUrl, $paidOrderId, $token, true);
         $refunded = $this->fetchOrderDetail($client, $baseUrl, $refundedOrderId, $token, true);
         $completed = $this->fetchOrderDetail($client, $baseUrl, $completedOrderId, $token, true);
+        $auditApproved = $this->fetchOrderDetail($client, $baseUrl, $auditApprovedOrderId, $token, true);
+        $auditRejected = $this->fetchOrderDetail($client, $baseUrl, $auditRejectedOrderId, $token, true);
+        $duplicateRefund = $this->fetchOrderDetail($client, $baseUrl, $duplicateRefundOrderId, $token, true);
 
         $this->assertSame(true, (bool)($unpaid['is_service_order'] ?? false), 'real h5 unpaid service order');
         $this->assertSame('pending_payment', (string)($unpaid['service_state'] ?? ''), 'real h5 unpaid state');
@@ -686,24 +717,103 @@ class ServiceOrderE2eAutomation extends Command
         $this->assertSame('pending_contact', (string)($paid['service_state'] ?? ''), 'real h5 paid state');
         $this->assertSame('refunded', (string)($refunded['service_state'] ?? ''), 'real h5 refunded state');
         $this->assertSame('completed', (string)($completed['service_state'] ?? ''), 'real h5 completed state');
+        $this->assertSame(true, (bool)($paid['action_flags']['can_apply_refund'] ?? false), 'real h5 paid auto refund enabled');
+        $this->assertSame(false, (bool)($completed['action_flags']['can_apply_refund'] ?? true), 'real h5 completed refund disabled');
+        $this->assertSame('refunded', (string)($auditApproved['service_state'] ?? ''), 'real h5 audit approved refunded');
+        $this->assertSame('in_service', (string)($auditRejected['service_state'] ?? ''), 'real h5 audit rejected remains in service');
+        $this->assertSame('退款已拒绝', (string)($auditRejected['refund_state_text'] ?? ''), 'real h5 audit rejected refund text');
+        $this->assertSame('refund_pending', (string)($duplicateRefund['service_state'] ?? ''), 'real h5 duplicate refund pending state');
         $this->assertSame(self::DEBUG_MOBILE, (string)($paid['service_contact']['contact_mobile'] ?? ''), 'real h5 service contact mobile');
         $this->assertSame(self::REAL_ORDER_REMARK_PREFIX . $runId . ':PAID', (string)($paid['remark'] ?? ''), 'real h5 run id remark');
     }
 
-    private function assertRealBackendScenarios($client, string $backendBase, string $token, int $unpaidOrderId, int $paidOrderId, int $refundedOrderId, int $completedOrderId, string $runId): void
+    private function assertRealBackendScenarios($client, string $backendBase, string $token, int $unpaidOrderId, int $paidOrderId, int $refundedOrderId, int $completedOrderId, int $auditApprovedOrderId, int $auditRejectedOrderId, int $duplicateRefundOrderId, string $runId): void
     {
         $unpaid = $this->fetchOrderDetail($client, $backendBase, $unpaidOrderId, $token, false);
         $paid = $this->fetchOrderDetail($client, $backendBase, $paidOrderId, $token, false);
         $refunded = $this->fetchOrderDetail($client, $backendBase, $refundedOrderId, $token, false);
         $completed = $this->fetchOrderDetail($client, $backendBase, $completedOrderId, $token, false);
+        $auditApproved = $this->fetchOrderDetail($client, $backendBase, $auditApprovedOrderId, $token, false);
+        $auditRejected = $this->fetchOrderDetail($client, $backendBase, $auditRejectedOrderId, $token, false);
+        $duplicateRefund = $this->fetchOrderDetail($client, $backendBase, $duplicateRefundOrderId, $token, false);
 
         $this->assertSame(true, OrderModel::isServiceOrderData($unpaid), 'real backend unpaid service classification');
         $this->assertSame(false, (bool)($unpaid['backend_action_flags']['can_start_service'] ?? true), 'real backend unpaid cannot start');
         $this->assertSame(true, (bool)($paid['backend_action_flags']['can_start_service'] ?? false), 'real backend paid can start');
+        $this->assertSame(true, (bool)($paid['backend_action_flags']['can_refund_before_service'] ?? false), 'real backend paid can auto refund before service');
         $this->assertSame(false, (bool)($completed['backend_action_flags']['can_start_service'] ?? true), 'real backend completed cannot restart');
+        $this->assertSame(false, (bool)($auditApproved['backend_action_flags']['can_start_service'] ?? true), 'real backend approved refund closed');
+        $this->assertSame(false, (bool)($duplicateRefund['backend_action_flags']['can_start_service'] ?? true), 'real backend duplicate pending cannot start');
+        $this->assertSame((int)OrderStatusEnum::NORMAL, (int)($auditRejected['order_status'] ?? 0), 'real backend rejected refund keeps order normal');
         $this->assertSame(self::REAL_ORDER_REMARK_PREFIX . $runId . ':PAID', (string)($paid['buyer_remark'] ?? ''), 'real backend run id remark');
         $this->assertSame((int)OrderStatusEnum::COMPLETED, (int)($completed['order_status'] ?? 0), 'real backend completed status');
         $this->assertSame((int)OrderStatusEnum::CANCELLED, (int)($refunded['order_status'] ?? 0), 'real backend refunded status');
+    }
+
+    private function applyRefund($client, string $baseUrl, string $token, int $orderId): int
+    {
+        $detail = $this->fetchOrderDetail($client, $baseUrl, $orderId, $token, true);
+        $goods = $detail['package_goods'][0]['order_goods_id'] ?? 0;
+        if ((int)$goods <= 0) {
+            throw new RuntimeException(sprintf('订单缺少可退款商品: %d', $orderId));
+        }
+        $response = $client->postJson($baseUrl . 'index.php?s=/api/refund/apply&orderGoodsId=' . (int)$goods, [
+            'form' => [
+                'content' => 'E2E staged refund apply',
+            ],
+        ], [
+            'Access-Token' => $token,
+            'platform' => 'H5',
+        ]);
+        if (!(bool)($response['ok'] ?? false)) {
+            $this->writeFailure('real-refund-apply', ['order_id' => $orderId, 'response' => $response]);
+            throw new RuntimeException(sprintf('申请退款失败: %d', $orderId));
+        }
+        $refundId = (int)Db::name('order_refund')->where('order_id', '=', $orderId)->order('order_refund_id', 'desc')->value('order_refund_id');
+        if ($refundId <= 0) {
+            throw new RuntimeException(sprintf('退款单创建失败: %d', $orderId));
+        }
+        return $refundId;
+    }
+
+    private function applyRefundExpectFailure($client, string $baseUrl, string $token, int $orderId, string $expectedMessage): void
+    {
+        $detail = $this->fetchOrderDetail($client, $baseUrl, $orderId, $token, true);
+        $goods = $detail['package_goods'][0]['order_goods_id'] ?? 0;
+        if ((int)$goods <= 0) {
+            throw new RuntimeException(sprintf('订单缺少可退款商品: %d', $orderId));
+        }
+        $response = $client->postJson($baseUrl . 'index.php?s=/api/refund/apply&orderGoodsId=' . (int)$goods, [
+            'form' => [
+                'content' => 'E2E staged refund expect fail',
+            ],
+        ], [
+            'Access-Token' => $token,
+            'platform' => 'H5',
+        ]);
+        if ((bool)($response['ok'] ?? false)) {
+            $this->writeFailure('real-refund-apply-should-fail', ['order_id' => $orderId, 'response' => $response]);
+            throw new RuntimeException(sprintf('退款申请本应失败: %d', $orderId));
+        }
+        $message = (string)($response['data']['message'] ?? $response['data']['msg'] ?? '');
+        if ($message !== $expectedMessage) {
+            $this->writeFailure('real-refund-apply-fail-message', ['order_id' => $orderId, 'expected' => $expectedMessage, 'response' => $response]);
+            throw new RuntimeException(sprintf('退款失败文案不匹配: %d', $orderId));
+        }
+    }
+
+    private function auditRefund($client, string $backendBase, string $token, int $orderRefundId, int $auditStatus, string $refuseDesc = ''): void
+    {
+        $response = $client->postJson($backendBase . 'index.php?s=/store/order.refund/audit&orderRefundId=' . $orderRefundId, [
+            'form' => [
+                'audit_status' => $auditStatus,
+                'refuse_desc' => $refuseDesc,
+            ],
+        ], ['Access-Token' => $token]);
+        if (!(bool)($response['ok'] ?? false)) {
+            $this->writeFailure('real-refund-audit', ['refund_id' => $orderRefundId, 'response' => $response]);
+            throw new RuntimeException(sprintf('退款审核失败: %d', $orderRefundId));
+        }
     }
 
     private function assertRealMiniProgramScenarios($client, array $config, string $token, int $paidOrderId, string $runId): void
@@ -713,6 +823,7 @@ class ServiceOrderE2eAutomation extends Command
         $detail = $this->fetchOrderDetail($client, $config['h5_url'], $paidOrderId, $token, true, 'MP-WEIXIN');
         $this->assertSame(true, (bool)($detail['is_service_order'] ?? false), 'real mp service order flag');
         $this->assertSame('pending_contact', (string)($detail['service_state'] ?? ''), 'real mp paid state');
+        $this->assertSame(true, (bool)($detail['action_flags']['can_apply_refund'] ?? false), 'real mp paid refund enabled');
         $this->assertSame(self::REAL_ORDER_REMARK_PREFIX . $runId . ':PAID', (string)($detail['remark'] ?? ''), 'real mp run id remark');
     }
 

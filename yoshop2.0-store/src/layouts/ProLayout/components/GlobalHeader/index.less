@@ -1,4 +1,5 @@
 @import "~ant-design-vue/es/style/themes/default";
+@import '../../../../styles/store-admin-tokens.less';
 
 @global-header-prefix-cls: ~'@{ant-prefix}-pro-global-header';
 
@@ -11,8 +12,10 @@
     position  : relative;
     height    : @layout-header-height;
     padding   : 0;
-    background: @pro-header-bg;
-    box-shadow: @pro-header-box-shadow;
+    background: fade(@store-admin-surface, 94%);
+    box-shadow: @store-admin-shadow-sm;
+    border-bottom: 1px solid fade(@store-admin-border, 75%);
+    backdrop-filter: blur(18px);
 
     &-index-right {
         float      : right;
@@ -30,7 +33,7 @@
             transition: all .3s;
 
             &:hover {
-                background: @pro-header-hover-trigger-action-bg;
+                background: fade(@store-admin-primary, 8%);
             }
         }
     }
@@ -101,7 +104,7 @@
 
             &:hover,
             &.opened {
-                background: @primary-color;
+                background: @store-admin-primary;
             }
 
             .ant-badge {
@@ -112,7 +115,7 @@
 
     .ant-pro-global-header-index-action {
         i {
-            color         : rgba(0, 0, 0, .65);
+            color         : inherit;
             vertical-align: middle;
         }
     }

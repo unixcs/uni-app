@@ -19,9 +19,9 @@
           </div>
           <!-- 操作栏 -->
           <div class="actions mt-10">
-            <div v-if="$auth('/order/refund/index.audit')">
+            <div v-if="canShowAuditAction">
               <a-button
-                v-if="record.audit_status == AuditStatusEnum.WAIT.value"
+                v-if="canAuditRecord"
                 type="primary"
                 @click="handleAudit"
               >商家审核</a-button>
@@ -185,6 +185,14 @@ export default {
       isServiceOrder: false
     }
   },
+  computed: {
+    canAuditRecord () {
+      return !!this.record && !!this.record.can_audit && this.$auth('/order/refund/index.audit')
+    },
+    canShowAuditAction () {
+      return this.$auth('/order/refund/detail') || this.$auth('/order/refund/index')
+    }
+  },
   beforeCreate () {
     // 批量给当前实例赋值
     assignment(this, {
@@ -219,7 +227,9 @@ export default {
           // 商品列表
           this.goodsList = [this.record.orderGoods]
         })
-        .finally(() => this.isLoading = false)
+        .finally(() => {
+          this.isLoading = false
+        })
     },
 
     // 渲染商家审核状态标签颜色
@@ -249,8 +259,7 @@ export default {
     handleAudit () {
       const { record } = this
       this.$refs.AuditForm.show(record)
-    },
-
+    }
   }
 }
 </script>

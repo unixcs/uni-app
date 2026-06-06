@@ -1,8 +1,18 @@
 @import "~ant-design-vue/es/style/themes/default.less";
+@import '../styles/store-admin-tokens.less';
 
 .ant-pro-global-header .ant-pro-global-header-index-action {
   i {
     vertical-align: -0.125em !important;
+  }
+
+  border-radius: @store-admin-radius-sm;
+  color: @store-admin-text;
+  transition: background 0.2s ease, color 0.2s ease;
+
+  &:hover {
+    background: fade(@store-admin-primary, 8%);
+    color: @store-admin-primary;
   }
 }
 
@@ -13,10 +23,10 @@
 
   &.ant-pro-global-header-index-dark {
     .ant-pro-global-header-index-action {
-      color: hsla(0, 0%, 100%, .85);
+      color: fade(@white, 88%);
 
       &:hover {
-        background: #1890ff;
+        background: fade(@store-admin-primary, 20%);
       }
     }
   }
@@ -27,7 +37,9 @@
       margin-right  : 8px;
       color         : @primary-color;
       vertical-align: top;
-      background    : rgba(255, 255, 255, 0.85);
+      background    : @store-admin-surface;
+      border        : 1px solid fade(@store-admin-border-strong, 70%);
+      box-shadow    : @store-admin-shadow-sm;
     }
   }
 
@@ -40,4 +52,11 @@
       min-width: 100px;
     }
   }
+}
+
+.ant-pro-global-header {
+  background: fade(@store-admin-surface, 94%);
+  border-bottom: 1px solid fade(@store-admin-border, 75%);
+  box-shadow: @store-admin-shadow-sm;
+  backdrop-filter: blur(18px);
 }

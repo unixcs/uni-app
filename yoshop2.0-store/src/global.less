@@ -1,5 +1,6 @@
 @import '~ant-design-vue/es/style/themes/default.less';
 @import './utils/utils.less';
+@import './styles/store-admin-tokens.less';
 
 
 // 滚动条样式
@@ -53,6 +54,63 @@ iframe {
 .ant-layout.layout-basic {
   height: 100vh;
   min-height: 100vh;
+}
+
+body {
+  background: @store-admin-page-shell-bg;
+  color: @store-admin-text;
+}
+
+#app {
+  background: @store-admin-page-shell-bg;
+}
+
+.ant-layout {
+  background: transparent;
+}
+
+.ant-pro-basicLayout {
+  background: @store-admin-page-shell-bg;
+}
+
+.ant-pro-fixed-header {
+  backdrop-filter: blur(18px);
+}
+
+.ant-pro-global-header,
+.ant-pro-top-nav-header,
+.ant-pro-page-header-wrap-page-header-warp {
+  background: @store-admin-surface;
+}
+
+.ant-pro-page-header-wrap-page-header-warp {
+  border-bottom: 1px solid fade(@store-admin-border, 70%);
+}
+
+.ant-pro-basicLayout-content {
+  margin: 0;
+  padding: 0;
+}
+
+.ant-pro-basicLayout-children-content-wrap {
+  background: transparent;
+}
+
+.ant-pro-grid-content {
+  width: 100%;
+}
+
+.ant-pro-grid-content.wide {
+  max-width: 1320px;
+}
+
+.ant-layout-content,
+.ant-layout-footer {
+  background: transparent;
+}
+
+.ant-layout-footer {
+  padding: 0 24px 18px;
 }
 
 // 数据列表 样式
@@ -201,6 +259,246 @@ iframe {
   margin-left: 5px;
 }
 
+// Shared component visual language
+.ant-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: @store-admin-radius-sm;
+  box-shadow: none;
+  transition: all 0.2s ease;
+
+  &:focus,
+  &:active {
+    box-shadow: 0 0 0 3px fade(@store-admin-primary, 10%);
+  }
+
+  &-sm,
+  &-icon-only,
+  &-circle,
+  &-round,
+  &-link,
+  &-text {
+    height: auto;
+    padding: initial;
+    box-shadow: none;
+  }
+
+  &-primary {
+    background: linear-gradient(180deg, @store-admin-primary 0%, @store-admin-primary-hover 100%);
+    border-color: @store-admin-primary;
+
+    &:hover,
+    &:focus {
+      background: @store-admin-primary-hover;
+      border-color: @store-admin-primary-hover;
+    }
+
+    &:active {
+      background: @store-admin-primary-active;
+      border-color: @store-admin-primary-active;
+    }
+  }
+
+  &-default {
+    color: @store-admin-text;
+    background: @store-admin-surface;
+    border-color: @store-admin-border-strong;
+
+    &:hover,
+    &:focus {
+      color: @store-admin-primary;
+      border-color: @store-admin-primary;
+      background: fade(@store-admin-primary, 4%);
+    }
+  }
+
+  &-dashed {
+    border-color: fade(@store-admin-border-strong, 90%);
+    color: @store-admin-text-weak;
+  }
+
+  &-link,
+  &-text {
+    color: @store-admin-primary;
+    padding: 0;
+
+    &:hover {
+      color: @store-admin-primary-hover;
+      background: fade(@store-admin-primary, 8%);
+    }
+  }
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selection,
+.ant-input-number,
+.ant-cascader-picker,
+.ant-picker {
+  border-radius: @store-admin-radius-sm;
+  border-color: @store-admin-border-strong;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-cascader-picker,
+.ant-picker {
+  .store-admin-input-surface();
+}
+
+.ant-input-affix-wrapper-focused,
+.ant-input-number-focused,
+.ant-calendar-picker:focus,
+.ant-picker-focused,
+.ant-select-focused .ant-select-selection,
+.ant-cascader-picker:focus {
+  border-color: @store-admin-primary;
+  box-shadow: 0 0 0 3px fade(@store-admin-primary, 10%);
+}
+
+.ant-input[disabled],
+.ant-input-affix-wrapper-disabled,
+.ant-input-number-disabled,
+.ant-select-disabled .ant-select-selection,
+.ant-picker-disabled {
+  background: #f8fafc;
+  color: @store-admin-text-faint;
+}
+
+.ant-select-selection,
+.ant-cascader-picker-label,
+.ant-select-selection__rendered {
+  border-radius: @store-admin-radius-sm;
+}
+
+.ant-tag {
+  margin-right: @store-admin-space-2;
+  padding: 0 10px;
+  border-radius: 999px;
+  border-color: fade(@store-admin-border-strong, 88%);
+  background: @store-admin-surface-soft;
+  color: @store-admin-text;
+}
+
+.ant-tag-blue {
+  color: @store-admin-primary;
+  background: fade(@store-admin-primary, 10%);
+  border-color: fade(@store-admin-primary, 18%);
+}
+
+.ant-tag-green {
+  color: @store-admin-success;
+  background: fade(@store-admin-success, 10%);
+  border-color: fade(@store-admin-success, 18%);
+}
+
+.ant-tag-orange,
+.ant-tag-gold {
+  color: @store-admin-warning;
+  background: fade(@store-admin-warning, 10%);
+  border-color: fade(@store-admin-warning, 18%);
+}
+
+.ant-tag-red {
+  color: @store-admin-error;
+  background: fade(@store-admin-error, 10%);
+  border-color: fade(@store-admin-error, 18%);
+}
+
+.ant-card {
+  border-radius: @store-admin-radius-lg;
+  border-color: @store-admin-border;
+  box-shadow: @store-admin-shadow-sm;
+
+  .ant-card-head {
+    min-height: 54px;
+    border-bottom-color: fade(@store-admin-border, 75%);
+  }
+
+  .ant-card-head-title {
+    color: @store-admin-text;
+    font-weight: 600;
+  }
+
+  .ant-card-extra {
+    color: @store-admin-text-weak;
+  }
+}
+
+.ant-pagination {
+  color: @store-admin-text-weak;
+
+  .ant-pagination-item,
+  .ant-pagination-prev,
+  .ant-pagination-next,
+  .ant-pagination-jump-prev,
+  .ant-pagination-jump-next {
+    border-radius: @store-admin-radius-sm;
+  }
+
+  .ant-pagination-item-active {
+    border-color: @store-admin-primary;
+    background: @store-admin-primary;
+
+    a {
+      color: @white;
+    }
+  }
+}
+
+.ant-drawer {
+  .ant-drawer-content {
+    background: @store-admin-surface;
+  }
+
+  .ant-drawer-header {
+    border-bottom-color: fade(@store-admin-border, 75%);
+  }
+
+  .ant-drawer-title {
+    color: @store-admin-text;
+    font-weight: 600;
+  }
+}
+
+.ant-modal {
+  .ant-modal-content {
+    overflow: hidden;
+    border-radius: @store-admin-radius-lg;
+    box-shadow: @store-admin-shadow-lg;
+  }
+
+  .ant-modal-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid fade(@store-admin-border, 75%);
+  }
+
+  .ant-modal-title {
+    color: @store-admin-text;
+    font-weight: 600;
+  }
+
+  .ant-modal-body {
+    padding: 20px 24px 12px;
+  }
+
+  .ant-modal-footer {
+    padding: 16px 24px 20px;
+    border-top: 1px solid fade(@store-admin-border, 75%);
+  }
+}
+
+.ant-divider {
+  border-color: fade(@store-admin-border, 85%);
+}
+
+.ant-divider-horizontal.ant-divider-with-text-left::before,
+.ant-divider-horizontal.ant-divider-with-text-right::after {
+  border-top-color: fade(@store-admin-border, 85%);
+}
+
 // 表单
 .ant-form {
 
@@ -259,39 +557,28 @@ iframe {
   [aria-hidden="true"][tabindex="0"] {
     display: none;
   }
-}
 
-.ant-modal-header {
-  border-bottom: none;
-  padding-bottom: 12px;
-}
+  .ant-modal-body {
+    font-size: 13.5px;
 
-.ant-modal-body {
-  padding: 14px 24px 6px 24px;
-  font-size: 13.5px;
-
-  .ant-form-item {
     .ant-form-item {
-      margin-bottom: 0;
-    }
+      .ant-form-item {
+        margin-bottom: 0;
+      }
 
-    &:last-child {
-      margin-bottom: 0;
+      &:last-child {
+        margin-bottom: 0;
+      }
     }
-  }
-
-  .ant-form-item-control {
-    padding-left: 10px;
 
     .ant-form-item-control {
-      padding-left: 0;
+      padding-left: 10px;
+
+      .ant-form-item-control {
+        padding-left: 0;
+      }
     }
   }
-}
-
-.ant-modal-footer {
-  border-top: none;
-  padding-top: 12px;
 }
 
 //# 兼容外部样式

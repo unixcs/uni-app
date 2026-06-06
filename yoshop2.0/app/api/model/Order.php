@@ -1,12 +1,12 @@
 <?php
 // +----------------------------------------------------------------------
-// | 萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
+// | 商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2017~2025 https://www.yiovo.com All rights reserved.
+// | Copyright (c) 2017~2025 https://www.example.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed 这不是一个自由软件，不允许对程序代码以任何形式任何目的的再发行
 // +----------------------------------------------------------------------
-// | Author: 萤火科技 <admin@yiovo.com>
+// | Author: 项目团队 <admin@example.com>
 // +----------------------------------------------------------------------
 declare (strict_types=1);
 
@@ -714,10 +714,7 @@ class Order extends OrderModel
      */
     private static function isAllowRefund(self $order): bool
     {
-        return $order['pay_status'] == PayStatusEnum::SUCCESS
-            && $order['order_status'] == OrderStatusEnum::NORMAL
-            && $order['delivery_status'] == DeliveryStatusEnum::NOT_DELIVERED
-            && !static::hasActiveRefund($order);
+        return parent::canApplyServiceRefund($order);
     }
 
     /**
@@ -727,14 +724,7 @@ class Order extends OrderModel
      */
     private static function hasActiveRefund(self $order): bool
     {
-        if (empty($order['order_id'])) {
-            return false;
-        }
-        return (new OrderRefundModel)
-            ->where('type', '=', RefundTypeEnum::SERVICE)
-            ->where('order_id', '=', (int)$order['order_id'])
-            ->where('status', '=', RefundStatusEnum::NORMAL)
-            ->count() > 0;
+        return parent::hasActiveServiceRefund($order);
     }
 
     /**

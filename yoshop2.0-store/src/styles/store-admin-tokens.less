@@ -1,0 +1,77 @@
+@store-admin-bg: #f4f7fb;
+@store-admin-surface: #ffffff;
+@store-admin-surface-ghost: rgba(255, 255, 255, 0.72);
+@store-admin-surface-soft: #f8fafc;
+@store-admin-surface-strong: #ffffff;
+
+@store-admin-text: #1f2937;
+@store-admin-text-weak: #6b7280;
+@store-admin-text-faint: #94a3b8;
+
+@store-admin-border: #e5eaf1;
+@store-admin-border-strong: #d5ddea;
+
+@store-admin-primary: #2563eb;
+@store-admin-primary-hover: #1d4ed8;
+@store-admin-primary-active: #1e40af;
+@store-admin-primary-soft: rgba(37, 99, 235, 0.1);
+
+@store-admin-success: #16a34a;
+@store-admin-warning: #d97706;
+@store-admin-error: #dc2626;
+@store-admin-info: #0f766e;
+
+@store-admin-radius-xs: 8px;
+@store-admin-radius-sm: 10px;
+@store-admin-radius-md: 14px;
+@store-admin-radius-lg: 18px;
+
+@store-admin-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+@store-admin-shadow-md: 0 10px 30px rgba(15, 23, 42, 0.08);
+@store-admin-shadow-lg: 0 18px 50px rgba(15, 23, 42, 0.12);
+
+@store-admin-space-1: 4px;
+@store-admin-space-2: 8px;
+@store-admin-space-3: 12px;
+@store-admin-space-4: 16px;
+@store-admin-space-5: 20px;
+@store-admin-space-6: 24px;
+@store-admin-space-7: 28px;
+@store-admin-space-8: 32px;
+
+@store-admin-panel-padding: 24px;
+@store-admin-page-gap: 20px;
+@store-admin-header-height: 64px;
+@store-admin-sider-width: 240px;
+
+@store-admin-page-header-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.9) 100%);
+@store-admin-page-shell-bg: linear-gradient(180deg, #f7f9fc 0%, #eef3f9 100%);
+
+.store-admin-panel() {
+  background: @store-admin-surface;
+  border: 1px solid @store-admin-border;
+  border-radius: @store-admin-radius-md;
+  box-shadow: @store-admin-shadow-sm;
+}
+
+.store-admin-panel-strong() {
+  background: @store-admin-surface;
+  border: 1px solid fade(@store-admin-border-strong, 86%);
+  border-radius: @store-admin-radius-lg;
+  box-shadow: @store-admin-shadow-md;
+}
+
+.store-admin-input-surface() {
+  background: @store-admin-surface;
+  border-color: @store-admin-border-strong;
+  border-radius: @store-admin-radius-sm;
+  box-shadow: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+
+  &:hover,
+  &:focus,
+  &.ant-input-focused {
+    border-color: @store-admin-primary;
+    box-shadow: 0 0 0 3px fade(@store-admin-primary, 10%);
+  }
+}

@@ -1,12 +1,12 @@
 <?php
 // +----------------------------------------------------------------------
-// | 萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
+// | 商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2017~2025 https://www.yiovo.com All rights reserved.
+// | Copyright (c) 2017~2025 https://www.example.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed 这不是一个自由软件，不允许对程序代码以任何形式任何目的的再发行
 // +----------------------------------------------------------------------
-// | Author: 萤火科技 <admin@yiovo.com>
+// | Author: 项目团队 <admin@example.com>
 // +----------------------------------------------------------------------
 
 header('Content-Type:text/html; charset=utf-8');
@@ -26,7 +26,7 @@ define('INSTALL_PATH', str_replace('\\', '/', dirname(__FILE__)));
 define('ROOT_PATH', dirname(INSTALL_PATH, 2));
 
 // 版权信息设置
-$cfg_copyright = '© 2017-2025 YIOVO.COM';
+$cfg_copyright = '© 2017-2025 example.com';
 
 // 获取当前步骤
 $s = getStep();

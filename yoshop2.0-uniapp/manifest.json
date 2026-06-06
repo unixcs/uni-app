@@ -1,7 +1,7 @@
 {
-    "name" : "萤火商城2.0",
+    "name" : "商城系统2.0",
     "appid" : "__UNI__F1B0D4F",
-    "description" : "萤火商城V2.0，是全新推出的一款轻量级、高性能、前后端分离的电商系统，让您快速搭建个性化独立商城",
+    "description" : "商城V2.0，是全新推出的一款轻量级、高性能、前后端分离的电商系统，让您快速搭建个性化独立商城",
     "versionName" : "2.1.2",
     "versionCode" : 212,
     "transformPx" : false,

@@ -589,7 +589,7 @@ CREATE TABLE `yoshop_page` (
   KEY `page_type` (`page_type`,`store_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=10001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='店铺页面记录表';
 
-INSERT INTO `yoshop_page` VALUES ('10001', '10', '商城首页', '{\"page\":{\"name\":\"页面设置\",\"type\":\"page\",\"params\":{\"name\":\"商城首页\",\"title\":\"萤火商城2.0\",\"shareTitle\":\"分享标题\"},\"style\":{\"titleTextColor\":\"black\",\"titleBackgroundColor\":\"#ffffff\"}},\"items\":[{\"name\":\"搜索框\",\"type\":\"search\",\"params\":{\"placeholder\":\"请输入关键字进行搜索\"},\"style\":{\"textAlign\":\"left\",\"searchStyle\":\"square\"}},{\"name\":\"店铺公告\",\"type\":\"notice\",\"params\":{\"text\":\"萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]\",\"link\":null,\"showIcon\":true,\"scrollable\":true},\"style\":{\"paddingTop\":0,\"background\":\"#fffbe8\",\"textColor\":\"#de8c17\"}}]}', '10001', '0', '1614556800', '1614556800');
+INSERT INTO `yoshop_page` VALUES ('10001', '10', '商城首页', '{\"page\":{\"name\":\"页面设置\",\"type\":\"page\",\"params\":{\"name\":\"商城首页\",\"title\":\"商城系统2.0\",\"shareTitle\":\"分享标题\"},\"style\":{\"titleTextColor\":\"black\",\"titleBackgroundColor\":\"#ffffff\"}},\"items\":[{\"name\":\"搜索框\",\"type\":\"search\",\"params\":{\"placeholder\":\"请输入关键字进行搜索\"},\"style\":{\"textAlign\":\"left\",\"searchStyle\":\"square\"}},{\"name\":\"店铺公告\",\"type\":\"notice\",\"params\":{\"text\":\"商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]\",\"link\":null,\"showIcon\":true,\"scrollable\":true},\"style\":{\"paddingTop\":0,\"background\":\"#fffbe8\",\"textColor\":\"#de8c17\"}}]}', '10001', '0', '1614556800', '1614556800');
 
 DROP TABLE IF EXISTS `yoshop_payment`;
 CREATE TABLE `yoshop_payment` (
@@ -4622,7 +4622,7 @@ CREATE TABLE `yoshop_store` (
   PRIMARY KEY (`store_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=10001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商家(商户)记录表';
 
-INSERT INTO `yoshop_store` VALUES ('10001', '萤火商城2.0', '感谢您选择萤火商城，希望我们的努力能为您提供一款适用于企业级电商零售的利器，萤火商城官方网站为 https://www.yiovo.com', '0', '', '', '100', '0', '0', '1614556800', '1614556800');
+INSERT INTO `yoshop_store` VALUES ('10001', '商城系统2.0', '感谢您选择商城，希望我们的努力能为您提供一款适用于企业级电商零售的利器，商城官方网站为 https://www.example.com', '0', '', '', '100', '0', '0', '1614556800', '1614556800');
 
 DROP TABLE IF EXISTS `yoshop_store_address`;
 CREATE TABLE `yoshop_store_address` (

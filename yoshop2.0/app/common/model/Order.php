@@ -1,12 +1,12 @@
 <?php
 // +----------------------------------------------------------------------
-// | 萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
+// | 商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2017~2025 https://www.yiovo.com All rights reserved.
+// | Copyright (c) 2017~2025 https://www.example.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed 这不是一个自由软件，不允许对程序代码以任何形式任何目的的再发行
 // +----------------------------------------------------------------------
-// | Author: 萤火科技 <admin@yiovo.com>
+// | Author: 项目团队 <admin@example.com>
 // +----------------------------------------------------------------------
 declare (strict_types=1);
 
@@ -20,6 +20,7 @@ use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use app\common\enum\order\ReceiptStatus as ReceiptStatusEnum;
 use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
+use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\library\helper;
 use think\db\exception\DataNotFoundException;
@@ -36,6 +37,10 @@ use think\model\relation\BelongsTo;
  */
 class Order extends BaseModel
 {
+    public const SERVICE_REFUND_MODE_NONE = 'none';
+    public const SERVICE_REFUND_MODE_AUTO = 'auto';
+    public const SERVICE_REFUND_MODE_AUDIT = 'audit';
+
     // 定义表名
     protected $name = 'order';
 
@@ -371,6 +376,92 @@ class Order extends BaseModel
         return !empty($serviceContact['contact_name'])
             || !empty($serviceContact['contact_mobile'])
             || !empty($serviceContact['time_preference']);
+    }
+
+    /**
+     * 获取服务订单退款模式
+     * @param array|self $order
+     * @return string
+     */
+    public static function getServiceRefundMode($order, ?int $excludeRefundId = null): string
+    {
+        if (!static::isServiceOrderData($order)) {
+            return self::SERVICE_REFUND_MODE_NONE;
+        }
+        if ((int)($order['pay_status'] ?? 0) !== PayStatusEnum::SUCCESS) {
+            return self::SERVICE_REFUND_MODE_NONE;
+        }
+        if ((int)($order['order_status'] ?? 0) !== OrderStatusEnum::NORMAL) {
+            return self::SERVICE_REFUND_MODE_NONE;
+        }
+        if (static::hasActiveServiceRefund($order, $excludeRefundId)) {
+            return self::SERVICE_REFUND_MODE_NONE;
+        }
+        if ((int)($order['delivery_status'] ?? 0) === DeliveryStatusEnum::NOT_DELIVERED) {
+            return self::SERVICE_REFUND_MODE_AUTO;
+        }
+        if (
+            (int)($order['delivery_status'] ?? 0) === DeliveryStatusEnum::DELIVERED
+            && (int)($order['receipt_status'] ?? 0) === ReceiptStatusEnum::NOT_RECEIVED
+        ) {
+            return self::SERVICE_REFUND_MODE_AUDIT;
+        }
+        return self::SERVICE_REFUND_MODE_NONE;
+    }
+
+    /**
+     * 当前是否允许用户申请退款
+     * @param array|self $order
+     * @return bool
+     */
+    public static function canApplyServiceRefund($order): bool
+    {
+        if (static::isServiceOrderData($order)) {
+            return static::getServiceRefundMode($order) !== self::SERVICE_REFUND_MODE_NONE;
+        }
+        return (int)($order['pay_status'] ?? 0) === PayStatusEnum::SUCCESS
+            && (int)($order['order_status'] ?? 0) === OrderStatusEnum::NORMAL
+            && (int)($order['delivery_status'] ?? 0) === DeliveryStatusEnum::NOT_DELIVERED
+            && !static::hasActiveServiceRefund($order);
+    }
+
+    /**
+     * 是否存在进行中的服务退款
+     * @param array|self $order
+     * @return bool
+     */
+    public static function hasActiveServiceRefund($order, ?int $excludeRefundId = null): bool
+    {
+        $data = $order instanceof self ? $order->getData() : (array)$order;
+        foreach (($order['goods'] ?? []) as $goods) {
+            if (
+                !empty($goods['refund'])
+                && (int)$goods['refund']['status'] === RefundStatusEnum::NORMAL
+                && ($excludeRefundId === null || (int)($goods['refund']['order_refund_id'] ?? 0) !== $excludeRefundId)
+            ) {
+                return true;
+            }
+        }
+        if (empty($data['order_id'])) {
+            return false;
+        }
+        $query = (new OrderRefund)->where('order_id', '=', (int)$data['order_id'])
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('status', '=', RefundStatusEnum::NORMAL);
+        if ($excludeRefundId !== null) {
+            $query->where('order_refund_id', '<>', $excludeRefundId);
+        }
+        return $query->count() > 0;
+    }
+
+    /**
+     * 获取整单可退金额
+     * @param array|self $order
+     * @return string
+     */
+    public static function getRefundableAmount($order): string
+    {
+        return sprintf('%.2f', (float)($order['pay_price'] ?? 0));
     }
 
     /**

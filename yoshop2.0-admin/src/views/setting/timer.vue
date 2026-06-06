@@ -10,7 +10,7 @@
     <div class="content">
       <h4 class="title">第一步、启动定时任务</h4>
       <p class="text">
-        <a href="https://www.yiovo.com/doc/10046" target="_blank">点击查看定时任务启动教程</a>
+        <a href="https://www.example.com/doc/10046" target="_blank">点击查看定时任务启动教程</a>
       </p>
       <h4 class="title">第二步、测试定时任务是否启动</h4>
       <p class="text mtb-10">

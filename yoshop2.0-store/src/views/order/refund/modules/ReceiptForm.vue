@@ -17,7 +17,7 @@
       />
       <a-form v-if="visible" :form="form">
         <a-form-item label="售后类型" :labelCol="labelCol" :wrapperCol="wrapperCol">
-          <a-tag>{{ RefundTypeEnum[record.type].name }}</a-tag>
+          <a-tag>{{ (RefundTypeEnum[record.type] || {}).name || '--' }}</a-tag>
         </a-form-item>
         <a-form-item label="订单付款的总金额" :labelCol="labelCol" :wrapperCol="wrapperCol">
           <span>￥{{ record.orderData.pay_price }}元</span>
@@ -72,10 +72,10 @@ export default {
 
     // 显示对话框
     show (record) {
-      // 显示窗口
-      this.visible = true
       // 当前记录
       this.record = record
+      // 显示窗口
+      this.visible = true
       // 更新form元素
       this.$nextTick(() => {
         this.$forceUpdate()
@@ -111,7 +111,9 @@ export default {
           // 通知父端组件提交完成了
           this.$emit('handleSubmit', values)
         })
-        .finally(() => this.isLoading = false)
+        .finally(() => {
+          this.isLoading = false
+        })
     }
 
   }

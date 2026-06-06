@@ -1,4 +1,5 @@
 @import "~ant-design-vue/es/style/themes/default";
+@import '../../styles/store-admin-tokens.less';
 
 @basicLayout-prefix-cls: ~'@{ant-prefix}-pro-basicLayout';
 @sider-menu-prefix-cls :~'@{ant-prefix}-pro-sider-menu';
@@ -6,24 +7,25 @@
 
 .@{basicLayout-prefix-cls} {
   min-width: 1400px;
+  background: @store-admin-page-shell-bg;
 
-  &:not('.ant-pro-basicLayout-mobile') {
+  &:not(.ant-pro-basicLayout-mobile) {
     ::-webkit-scrollbar {
       width : 6px;
       height: 6px;
     }
 
     ::-webkit-scrollbar-track {
-      background        : rgba(0, 0, 0, 0.06);
-      border-radius     : 3px;
-      -webkit-box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.08);
+      background        : rgba(15, 23, 42, 0.06);
+      border-radius     : 999px;
+      -webkit-box-shadow: inset 0 0 5px rgba(15, 23, 42, 0.08);
     }
 
     /* 滚动条滑块 */
     ::-webkit-scrollbar-thumb {
-      background        : rgba(0, 0, 0, 0.12);
-      border-radius     : 3px;
-      -webkit-box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+      background        : rgba(37, 99, 235, 0.24);
+      border-radius     : 999px;
+      -webkit-box-shadow: inset 0 0 10px rgba(37, 99, 235, 0.18);
     }
   }
 
@@ -35,7 +37,9 @@
 
   .ant-layout-header {
     &:not(.ant-pro-top-menu) {
-      background: @component-background;
+      background: fade(@store-admin-surface, 92%);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid fade(@store-admin-border, 75%);
     }
 
     &.ant-pro-fixed-header {
@@ -46,11 +50,11 @@
 
   &-content {
     position  : relative;
-    margin    : 24px;
+    margin    : 0;
     transition: all 0.2s;
 
     .@{ant-prefix}-pro-page-header-wrap {
-      margin: -24px -24px 0;
+      margin: -@store-admin-page-gap -@store-admin-page-gap 0;
     }
 
     &-disable-margin {
@@ -89,29 +93,8 @@
     }
   }
 
-  &-content {
-    position  : relative;
-    margin    : 80px 20px 20px 20px;
-    transition: all 0.2s;
-
-    .@{ant-prefix}-pro-page-header-wrap {
-      margin: -24px -24px 0;
-    }
-
-    &-disable-margin {
-      margin: 0;
-
-      >div>.@{ant-prefix}-pro-page-header-wrap {
-        margin: 0;
-      }
-    }
-
-    >.ant-layout {
-      max-height: 100%;
-    }
+  .ant-pro-basicLayout-children-content-wrap {
+    min-height: calc(100vh - @layout-header-height);
+    padding   : @store-admin-page-gap;
   }
-
-  // .color-picker {
-  //   margin: 10px 0;
-  // }
 }

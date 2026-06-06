@@ -1,12 +1,12 @@
 <?php
 // +----------------------------------------------------------------------
-// | 萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
+// | 商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2017~2025 https://www.yiovo.com All rights reserved.
+// | Copyright (c) 2017~2025 https://www.example.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed 这不是一个自由软件，不允许对程序代码以任何形式任何目的的再发行
 // +----------------------------------------------------------------------
-// | Author: 萤火科技 <admin@yiovo.com>
+// | Author: 项目团队 <admin@example.com>
 // +----------------------------------------------------------------------
 declare (strict_types=1);
 
@@ -62,10 +62,11 @@ class Order extends OrderModel
      */
     public function getList(array $param = [])
     {
+        $params = $this->normalizeQueryParams($param);
         // 检索查询条件
-        $filter = $this->getQueryFilter($param);
+        $filter = $this->getQueryFilter($params);
         // 设置订单类型条件
-        $dataTypeFilter = $this->getFilterDataType($param['dataType']);
+        $dataTypeFilter = $this->getFilterDataType($params['dataType']);
         // 获取数据列表
         $query = $this->with(['goods.image', 'user.avatar', 'trade'])
             ->alias('order')
@@ -75,8 +76,9 @@ class Order extends OrderModel
             ->where($filter)
             ->where('order.is_delete', '=', 0)
             ->order(['order.create_time' => 'desc']);
-        if ($this->isRefundDataType($param['dataType'])) {
-            $refundOrderIds = $this->getRefundOrderIdsByDataType($param['dataType']);
+        $this->applyKeywordFilter($query, $params);
+        if ($this->isRefundDataType($params['dataType'])) {
+            $refundOrderIds = $this->getRefundOrderIdsByDataType($params['dataType']);
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
@@ -165,7 +167,7 @@ class Order extends OrderModel
             if (empty($refund)) {
                 throwError('退款单创建失败');
             }
-            if (!$refund->audit(['audit_status' => RefundAuditStatusEnum::REVIEWED])) {
+            if (!$refund->completeAutoRefund('商家在服务开始前直接退款')) {
                 throwError($refund->getError() ?: '执行订单退款失败');
             }
             return true;
@@ -179,20 +181,23 @@ class Order extends OrderModel
      */
     public function getListAll(array $param = [])
     {
+        $params = $this->normalizeQueryParams($param);
         // 检索查询条件
-        $queryFilter = $this->getQueryFilter($param);
+        $queryFilter = $this->getQueryFilter($params);
         // 设置订单类型条件
-        $dataTypeFilter = $this->getFilterDataType($param['dataType']);
+        $dataTypeFilter = $this->getFilterDataType($params['dataType']);
         // 获取数据列表
         $query = $this->with(['goods.image', 'user.avatar', 'trade'])
             ->alias('order')
             ->field('order.*')
-            ->join('user', 'user.user_id = order.user_id')
+            ->leftJoin('user', 'user.user_id = order.user_id')
+            ->leftJoin('payment_trade trade', 'trade.trade_id = order.trade_id')
             ->where($queryFilter)
             ->where('order.is_delete', '=', 0)
             ->order(['order.create_time' => 'desc']);
-        if ($this->isRefundDataType($param['dataType'])) {
-            $refundOrderIds = $this->getRefundOrderIdsByDataType($param['dataType']);
+        $this->applyKeywordFilter($query, $params);
+        if ($this->isRefundDataType($params['dataType'])) {
+            $refundOrderIds = $this->getRefundOrderIdsByDataType($params['dataType']);
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
@@ -207,30 +212,9 @@ class Order extends OrderModel
      */
     private function getQueryFilter(array $param): array
     {
-        // 默认参数
-        $params = $this->setQueryDefaultValue($param, [
-            'searchType' => '',     // 关键词类型 (10订单号 20会员昵称 30会员ID 40联系人姓名 50联系人电话 60第三方支付订单号)
-            'searchValue' => '',    // 关键词内容
-            'orderSource' => -1,    // 订单来源
-            'payMethod' => '',      // 支付方式
-            'deliveryType' => -1,   // 兼容旧参数，服务订单场景忽略
-            'betweenTime' => [],    // 起止时间
-            'userId' => 0,          // 会员ID
-        ]);
+        $params = $this->normalizeQueryParams($param);
         // 检索查询条件
         $filter = [];
-        // 关键词
-        if (!empty($params['searchValue'])) {
-            $searchWhere = [
-                10 => ['order.order_no', 'like', "%{$params['searchValue']}%"],
-                20 => ['user.nick_name', 'like', "%{$params['searchValue']}%"],
-                30 => ['order.user_id', '=', (int)$params['searchValue']],
-                40 => ['order.contact_name', 'like', "%{$params['searchValue']}%"],
-                50 => ['order.contact_mobile', 'like', "%{$params['searchValue']}%"],
-                60 => ['trade.out_trade_no', 'like', "%{$params['searchValue']}%"],
-            ];
-            \array_key_exists($params['searchType'], $searchWhere) && $filter[] = $searchWhere[$params['searchType']];
-        }
         // 起止时间
         if (!empty($params['betweenTime'])) {
             $times = between_time($params['betweenTime']);
@@ -244,6 +228,79 @@ class Order extends OrderModel
         // 会员ID
         $params['userId'] > 0 && $filter[] = ['order.user_id', '=', (int)$params['userId']];
         return $filter;
+    }
+
+    /**
+     * 规范化列表查询参数
+     * @param array $param
+     * @return array
+     */
+    private function normalizeQueryParams(array $param): array
+    {
+        return $this->setQueryDefaultValue($param, [
+            'searchType' => '',     // 关键词类型 (10订单号 20会员昵称 30会员ID 40联系人姓名 50联系人电话 60第三方支付订单号)
+            'searchValue' => '',    // 关键词内容
+            'orderSource' => -1,    // 订单来源
+            'payMethod' => '',      // 支付方式
+            'deliveryType' => -1,   // 兼容旧参数，服务订单场景忽略
+            'betweenTime' => [],    // 起止时间
+            'userId' => 0,          // 会员ID
+        ]);
+    }
+
+    /**
+     * 应用关键词搜索条件
+     * @param $query
+     * @param array $params
+     * @return void
+     */
+    private function applyKeywordFilter($query, array $params): void
+    {
+        $searchValue = trim((string)$params['searchValue']);
+        if ($searchValue === '') {
+            return;
+        }
+        $searchLikeValue = $this->escapeLikeValue($searchValue);
+        switch ((int)$params['searchType']) {
+            case 10:
+                $query->where('order.order_no', 'like', "%{$searchLikeValue}%");
+                break;
+            case 20:
+                $query->where('user.nick_name', 'like', "%{$searchLikeValue}%");
+                break;
+            case 30:
+                if (preg_match('/^\d+$/', $searchValue)) {
+                    $query->where('order.user_id', '=', (int)$searchValue);
+                } else {
+                    $query->where('order.user_id', '=', -1);
+                }
+                break;
+            case 40:
+                $query->whereRaw(
+                    "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_name')) ELSE '' END LIKE :searchValue",
+                    ['searchValue' => "%{$searchLikeValue}%"]
+                );
+                break;
+            case 50:
+                $query->whereRaw(
+                    "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_mobile')) ELSE '' END LIKE :searchValue",
+                    ['searchValue' => "%{$searchLikeValue}%"]
+                );
+                break;
+            case 60:
+                $query->where('trade.out_trade_no', 'like', "%{$searchLikeValue}%");
+                break;
+        }
+    }
+
+    /**
+     * 转义 LIKE 查询中的通配符
+     * @param string $value
+     * @return string
+     */
+    private function escapeLikeValue(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     /**
@@ -418,10 +475,14 @@ class Order extends OrderModel
      */
     public function getBackendActionFlagsAttr($value, $data): array
     {
+        $activeRefund = $this->getActiveServiceRefundSummary($data);
         return [
             'can_start_service' => $this->checkCanStartService($data),
             'can_complete_service' => $this->checkCanCompleteService($data),
             'can_refund_before_service' => $this->checkCanRefundBeforeService($data),
+            'has_active_refund' => !empty($activeRefund),
+            'active_refund_id' => (int)($activeRefund['order_refund_id'] ?? 0),
+            'can_audit_refund' => !empty($activeRefund) && (int)($activeRefund['audit_status'] ?? 0) === RefundAuditStatusEnum::WAIT,
         ];
     }
 
@@ -598,6 +659,10 @@ class Order extends OrderModel
             $this->error = '当前订单状态不允许完成服务';
             return false;
         }
+        if ($this->hasActiveRefund((int)$order['order_id'])) {
+            $this->error = '当前订单存在进行中的退款申请，暂不可完成服务';
+            return false;
+        }
         return true;
     }
 
@@ -617,7 +682,7 @@ class Order extends OrderModel
             $this->error = '未支付订单无需退款';
             return false;
         }
-        if ($order['order_status'] != OrderStatusEnum::NORMAL || $order['delivery_status'] != DeliveryStatusEnum::NOT_DELIVERED) {
+        if (static::getServiceRefundMode($order) !== static::SERVICE_REFUND_MODE_AUTO) {
             $this->error = '当前订单状态不允许退款';
             return false;
         }
@@ -653,6 +718,35 @@ class Order extends OrderModel
             ->where('order_id', '=', $orderId)
             ->where('status', '=', RefundStatusEnum::NORMAL)
             ->count() > 0;
+    }
+
+    /**
+     * 获取当前进行中的服务退款单摘要
+     * @param array|self|null $order
+     * @return array|null
+     */
+    private function getActiveServiceRefundSummary($order = null): ?array
+    {
+        $order = $order ?: $this;
+        foreach (($order['goods'] ?? []) as $goods) {
+            if (!empty($goods['refund']) && (int)$goods['refund']['status'] === RefundStatusEnum::NORMAL) {
+                return [
+                    'order_refund_id' => (int)($goods['refund']['order_refund_id'] ?? 0),
+                    'audit_status' => (int)($goods['refund']['audit_status'] ?? 0),
+                ];
+            }
+        }
+        if (empty($order['order_id'])) {
+            return null;
+        }
+        $refund = (new OrderRefund)
+            ->field(['order_refund_id', 'audit_status'])
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('order_id', '=', (int)$order['order_id'])
+            ->where('status', '=', RefundStatusEnum::NORMAL)
+            ->order(['create_time' => 'desc', 'order_refund_id' => 'desc'])
+            ->find();
+        return $refund ? $refund->toArray() : null;
     }
 
     /**

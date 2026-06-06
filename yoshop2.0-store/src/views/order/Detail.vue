@@ -41,6 +41,11 @@
             <div v-if="canRefundBeforeService && canUseRefundBeforeServiceAction" class="action-item">
               <a-button type="danger" @click="handleRefundBeforeService">服务前退款</a-button>
             </div>
+            <div v-if="canViewActiveRefund" class="action-item">
+              <a-button :type="canAuditActiveRefund ? 'primary' : 'default'" @click="handleViewActiveRefund">
+                {{ canAuditActiveRefund ? '服务中退款' : '查看退款' }}
+              </a-button>
+            </div>
           </div>
         </div>
       </a-card>
@@ -223,6 +228,18 @@ export default {
     canUseRefundBeforeServiceAction () {
       return this.$auth('/order.event/refundBeforeService') || this.$auth('/order/list/all.cancel')
     },
+    activeRefundId () {
+      return Number(this.backendActionFlags.active_refund_id || 0)
+    },
+    canAuditActiveRefund () {
+      return !!this.backendActionFlags.can_audit_refund && this.$auth('/order/refund/index.audit')
+    },
+    canViewActiveRefund () {
+      return this.activeRefundId > 0 && this.canUseRefundDetailAction
+    },
+    canUseRefundDetailAction () {
+      return this.$auth('/order/refund/detail') || this.$auth('/order/refund/index')
+    },
     latestRefund () {
       const goodsList = this.record.goods || []
       for (const goods of goodsList) {
@@ -321,6 +338,15 @@ export default {
         '该操作会按原路退款并关闭当前服务单。',
         () => EventApi.refundBeforeService(this.orderId)
       )
+    },
+    handleViewActiveRefund () {
+      if (!this.activeRefundId) {
+        return
+      }
+      this.$router.push({
+        path: '/order/refund/detail',
+        query: { orderRefundId: this.activeRefundId }
+      })
     }
   }
 }

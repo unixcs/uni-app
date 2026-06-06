@@ -3,7 +3,7 @@
 项目简述
 ----
 
-基于 [Ant Design Pro](https://pro.ant.design/) 实现的 [萤火商城V2.0-store端]
+基于 [Ant Design Pro](https://pro.ant.design/) 实现的 [商城V2.0-store端]
 
 环境和依赖
 ----

@@ -114,8 +114,7 @@
                           :to="{ path: '/order/refund/detail', query: { orderRefundId: item.order_refund_id } }"
                         >详情</router-link>
                         <a
-                          v-action:audit
-                          v-if="item.audit_status == AuditStatusEnum.WAIT.value"
+                          v-if="canAudit(item)"
                           @click="handleAudit(item)"
                         >审核</a>
                       </div>
@@ -258,7 +257,9 @@ export default {
         .then(response => {
           this.refundList = response.data.list
         })
-        .finally(() => this.isLoading = false)
+        .finally(() => {
+          this.isLoading = false
+        })
     },
 
     // 渲染商家审核状态标签颜色
@@ -307,6 +308,9 @@ export default {
     // 重置搜索表单
     handleReset () {
       this.searchForm.resetFields()
+      this.queryParam = {}
+      this.page = 1
+      this.handleRefresh()
     },
 
     // 翻页事件
@@ -318,6 +322,10 @@ export default {
     // 商家审核
     handleAudit (record) {
       this.$refs.AuditForm.show(record)
+    },
+
+    canAudit (item) {
+      return !!item && !!item.can_audit && this.$auth('/order/refund/index.audit')
     },
 
     // 是否服务订单售后

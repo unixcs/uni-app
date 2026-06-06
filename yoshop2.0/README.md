@@ -1,7 +1,7 @@
-# 萤火商城V2.0开源版
+# 商城V2.0开源版
 
 #### 项目介绍
-萤火商城V2.0，是全新推出的一款轻量级、高性能、前后端分离的电商系统，支持微信小程序 + H5+ 公众号 + APP，前后端源码完全开源，看见及所得，完美支持二次开发，可学习可商用，让您快速搭建个性化独立商城。
+商城V2.0，是全新推出的一款轻量级、高性能、前后端分离的电商系统，支持微信小程序 + H5+ 公众号 + APP，前后端源码完全开源，看见及所得，完美支持二次开发，可学习可商用，让您快速搭建个性化独立商城。
 
     如果对您有帮助，您可以点右上角 “Star” 收藏一下 ，获取第一时间更新，谢谢！
 
@@ -27,7 +27,7 @@
 
 #### 系统演示
 
-- 商城后台演示：https://shop2.yiovo.com/admin/
+- 商城后台演示：https://shop2.example.com/admin/
 - 用户名和密码：admin yinghuo
 ![前端演示二维码](https://images.gitee.com/uploads/images/2021/0316/104516_3778337e_2166072.png "111.png")
 - QQ交流群 806461900
@@ -68,8 +68,8 @@
 
 #### 安装教程
 
-1. 后端服务端（php）：https://www.yiovo.com/doc/10024
-2. 微信小程序端：https://www.yiovo.com/doc/10047
+1. 后端服务端（php）：https://www.example.com/doc/10024
+2. 微信小程序端：https://www.example.com/doc/10047
 
 #### 后台地址
 
@@ -98,7 +98,7 @@ php think timer start
 
 本项目包含的第三方源码和二进制文件之版权信息另行标注。
 
-版权所有Copyright © 2017-2026 By 萤火科技 (https://www.yiovo.com) All rights reserved。
+版权所有Copyright © 2017-2026 By 项目团队 (https://www.example.com) All rights reserved。
 
 
 

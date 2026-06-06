@@ -1,12 +1,12 @@
 <?php
 // +----------------------------------------------------------------------
-// | 萤火商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
+// | 商城系统 [ 致力于通过产品和服务，帮助商家高效化开拓市场 ]
 // +----------------------------------------------------------------------
-// | Copyright (c) 2017~2025 https://www.yiovo.com All rights reserved.
+// | Copyright (c) 2017~2025 https://www.example.com All rights reserved.
 // +----------------------------------------------------------------------
 // | Licensed 这不是一个自由软件，不允许对程序代码以任何形式任何目的的再发行
 // +----------------------------------------------------------------------
-// | Author: 萤火科技 <admin@yiovo.com>
+// | Author: 项目团队 <admin@example.com>
 // +----------------------------------------------------------------------
 declare (strict_types=1);
 
@@ -57,9 +57,12 @@ class Refund extends Controller
     public function audit(int $orderRefundId): Json
     {
         // 售后单详情
-        $model = OrderRefundModel::detail($orderRefundId);
+        $model = OrderRefundModel::detailForStore($orderRefundId);
+        if (!$model) {
+            return $this->renderError('未找到该售后单记录');
+        }
         // 确认审核
-        if ($model->audit($this->postForm())) {
+        if ($model->audit($this->postForm() ?: [])) {
             return $this->renderSuccess('操作成功');
         }
         return $this->renderError($model->getError() ?: '操作失败');
@@ -73,9 +76,12 @@ class Refund extends Controller
     public function receipt(int $orderRefundId): Json
     {
         // 售后单详情
-        $model = OrderRefundModel::detail($orderRefundId);
+        $model = OrderRefundModel::detailForStore($orderRefundId);
+        if (!$model) {
+            return $this->renderError('未找到该售后单记录');
+        }
         // 确认收货并退款
-        if ($model->receipt($this->postForm())) {
+        if ($model->receipt($this->postForm() ?: [])) {
             return $this->renderSuccess('操作成功');
         }
         return $this->renderError($model->getError() ?: '操作失败');
