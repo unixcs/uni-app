@@ -2,6 +2,13 @@ import Vue from 'vue'
 import Router from 'vue-router'
 import { constantRouterMap } from '@/config/router.config'
 
+export function createRouter () {
+  return new Router({
+    mode: 'hash',
+    routes: constantRouterMap
+  })
+}
+
 // hack router push callback
 const originalPush = Router.prototype.push
 Router.prototype.push = function push (location, onResolve, onReject) {
@@ -11,7 +18,11 @@ Router.prototype.push = function push (location, onResolve, onReject) {
 
 Vue.use(Router)
 
-export default new Router({
-  mode: 'hash',
-  routes: constantRouterMap
-})
+const router = createRouter()
+
+export function resetRouter () {
+  const newRouter = createRouter()
+  router.matcher = newRouter.matcher
+}
+
+export default router

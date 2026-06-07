@@ -450,9 +450,40 @@ export const asyncRouterMap = [
         path: '/setting',
         name: 'setting',
         component: RouteView,
-        redirect: '/setting/store/basic',
+        redirect: '/setting/trade',
         meta: { title: '设置', icon: Icons.setting, permission: ['/setting'] },
         children: [
+          {
+            path: '/setting/payment/setting',
+            component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/payment/Setting'),
+            meta: { title: '支付设置', keepAlive: false, permission: ['/setting/payment/setting'] }
+          },
+          {
+            path: '/setting/payment/template',
+            component: RouteView,
+            redirect: '/setting/payment/template/index',
+            meta: { title: '支付模板', keepAlive: false, permission: ['/setting/payment/template'] },
+            children: [
+              {
+                path: '/setting/payment/template/index',
+                component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/payment/template/Index'),
+                meta: { title: '模板管理', keepAlive: false, permission: ['/setting/payment/template/index'] },
+                activePath: ['/setting/payment/template/create', '/setting/payment/template/update']
+              },
+              {
+                path: '/setting/payment/template/create',
+                component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/payment/template/Create'),
+                meta: { title: '新增模板', keepAlive: false, permission: ['/setting/payment/template/create'] },
+                hidden: true
+              },
+              {
+                path: '/setting/payment/template/update',
+                component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/payment/template/Update'),
+                meta: { title: '编辑模板', keepAlive: false, permission: ['/setting/payment/template/update'] },
+                hidden: true
+              }
+            ]
+          },
           {
             path: '/setting/trade',
             component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/Trade'),
@@ -474,6 +505,19 @@ export const asyncRouterMap = [
             path: '/setting/sms',
             component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/Sms'),
             meta: { title: '短信通知', keepAlive: false, permission: ['/setting/sms'] }
+          },
+          {
+            path: '/setting/other',
+            component: RouteView,
+            redirect: '/setting/other/clear',
+            meta: { title: '其他设置', keepAlive: false, permission: ['/setting/other'] },
+            children: [
+              {
+                path: '/setting/other/clear',
+                component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/other/Clear'),
+                meta: { title: '清理缓存', keepAlive: false, permission: ['/setting/other/clear'] }
+              }
+            ]
           },
           {
             path: '/setting/printer',

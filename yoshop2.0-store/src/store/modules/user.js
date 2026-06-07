@@ -3,10 +3,12 @@ import { login, logout } from '@/api/login'
 import { getInfo } from '@/api/store/user'
 import { ACCESS_TOKEN } from '@/store/mutation-types'
 import { welcome } from '@/utils/util'
+import { resetRouter } from '@/router'
 
 // 创建路由权限列表
 const createPermissionList = roles => {
-  roles.permissions.map(item => {
+  roles.permissions = Array.isArray(roles.permissions) ? roles.permissions : []
+  roles.permissions.forEach(item => {
     item.actionList = []
     if (item.actionEntitySet && item.actionEntitySet.length > 0) {
       item.actionList = item.actionEntitySet.map(action => action.action)
@@ -43,6 +45,13 @@ const user = {
     },
     SET_INFO: (state, info) => {
       state.info = info
+    },
+    RESET_USER_STATE: (state) => {
+      state.token = ''
+      state.name = ''
+      state.welcome = ''
+      state.roles = {}
+      state.info = {}
     }
   },
 
@@ -51,6 +60,10 @@ const user = {
     // 用户登录
     Login ({ commit }, userInfo) {
       return new Promise((resolve, reject) => {
+        resetRouter()
+        commit('RESET_USER_STATE')
+        commit('RESET_ROUTERS')
+        storage.remove(ACCESS_TOKEN)
         login(userInfo)
           .then(response => {
             const data = response.data
@@ -90,8 +103,9 @@ const user = {
         logout(state.token)
           .then(() => {
             // 清理用户信息
-            commit('SET_TOKEN', '')
-            commit('SET_ROLES', [])
+            resetRouter()
+            commit('RESET_USER_STATE')
+            commit('RESET_ROUTERS')
             storage.remove(ACCESS_TOKEN)
             resolve()
           })

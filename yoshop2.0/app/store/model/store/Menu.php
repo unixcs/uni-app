@@ -40,7 +40,8 @@ class Menu extends MenuModel
         $data = [];
         foreach ($menuList as $key => $item) {
             if ($item['parent_id'] == $parentId) {
-                if ($this->isLegacyDeliveryMenu($item)) {
+                $menuItem = is_array($item) ? $item : $item->toArray();
+                if ($this->isLegacyDeliveryMenu($menuItem)) {
                     unset($menuList[$key]);
                     continue;
                 }

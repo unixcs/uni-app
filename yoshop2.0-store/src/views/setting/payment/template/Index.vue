@@ -111,12 +111,12 @@ export default {
 
     // 新增记录
     handleAdd () {
-      this.$router.push({ path: './create' })
+      this.$router.push({ path: '/setting/payment/template/create' })
     },
 
     // 编辑记录
     handleEdit (item) {
-      this.$router.push({ path: './update', query: { templateId: item.template_id } })
+      this.$router.push({ path: '/setting/payment/template/update', query: { templateId: item.template_id } })
     },
 
     // 删除记录

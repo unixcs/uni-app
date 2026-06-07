@@ -1,5 +1,15 @@
 import { asyncRouterMap, constantRouterMap } from '@/config/router.config'
 
+function cloneRoutes (routes) {
+  return routes.map(route => {
+    const current = { ...route }
+    if (route.children && route.children.length) {
+      current.children = cloneRoutes(route.children)
+    }
+    return current
+  })
+}
+
 /**
  * 过滤账户是否拥有某一个权限，并将菜单从加载列表移除
  * @param permission
@@ -18,6 +28,31 @@ function hasPermission (permission, route) {
     return false
   }
   return true
+}
+
+function hasRoutePermission (roles, route, children = []) {
+  if (getVisibleChildren(children).length > 0) {
+    return true
+  }
+  return hasPermission(roles.permissionList, route)
+}
+
+function getVisibleChildren (children = []) {
+  return children.filter(item => !item.hidden)
+}
+
+function getFirstAvailablePath (route) {
+  const children = getVisibleChildren(route.children || [])
+  if (children.length === 0) {
+    return route.hidden ? null : route.path
+  }
+  for (const child of children) {
+    const path = getFirstAvailablePath(child)
+    if (path) {
+      return path
+    }
+  }
+  return route.hidden ? null : route.path
 }
 
 /**
@@ -42,10 +77,15 @@ function hasRole (roles, route) {
  */
 function filterAsyncRouter (routerMap, roles) {
   const accessedRouters = routerMap.filter(route => {
-    if (hasPermission(roles.permissionList, route)) {
-      if (route.children && route.children.length) {
-        route.children = filterAsyncRouter(route.children, roles)
-      }
+    const children = route.children && route.children.length
+      ? filterAsyncRouter(route.children, roles)
+      : []
+    if (children.length > 0) {
+      route.children = children
+    } else if (route.children) {
+      route.children = []
+    }
+    if (hasRoutePermission(roles, route, children)) {
       return true
     }
     return false
@@ -76,21 +116,22 @@ function setPrimaryMenuRedirect (routerMap) {
     // 设置二级菜单的redirect
     const twoList = oneItem.children != null ? oneItem.children : []
     twoList.forEach(twoItem => {
-      const treeList = twoItem.children != null ? twoItem.children : []
+      const treeList = getVisibleChildren(twoItem.children != null ? twoItem.children : [])
       const childrenPaths = treeList.map(item => item.path)
       if (childrenPaths.length > 0) {
         if (!twoItem.redirect || childrenPaths.indexOf(twoItem.redirect) === -1) {
-          twoItem.redirect = childrenPaths[0]
+          twoItem.redirect = getFirstAvailablePath(treeList[0]) || childrenPaths[0]
         }
       }
     })
     // 设置一级菜单的redirect
-    const childrenPaths = oneItem.children != null ? oneItem.children.map(item => item.path) : []
+    const visibleChildren = getVisibleChildren(oneItem.children != null ? oneItem.children : [])
+    const childrenPaths = visibleChildren.map(item => item.path)
     if (childrenPaths.length > 0) {
       // 如果未设置redirect, 则默认取第一个path
       // 如果设置了redirect, 判断是否有权限, 无权限则取第一个path
       if (!oneItem.redirect || childrenPaths.indexOf(oneItem.redirect) === -1) {
-        oneItem.redirect = childrenPaths[0]
+        oneItem.redirect = getFirstAvailablePath(visibleChildren[0]) || childrenPaths[0]
       }
     }
   })
@@ -104,9 +145,10 @@ function setPrimaryMenuRedirect (routerMap) {
  */
 function setIndexRedirect (routerMap) {
   const root = routerMap[0]
-  if (root.children && root.children.length) {
-    const item = root.children[0]
-    root.redirect = item.redirect != null ? item.redirect : item.path
+  const visibleChildren = getVisibleChildren(root.children || [])
+  if (visibleChildren.length) {
+    const item = visibleChildren[0]
+    root.redirect = item.redirect != null ? item.redirect : getFirstAvailablePath(item)
   } else {
     root.redirect = '/404'
   }
@@ -122,6 +164,10 @@ const permission = {
     SET_ROUTERS: (state, routers) => {
       state.addRouters = routers
       state.routers = constantRouterMap.concat(routers)
+    },
+    RESET_ROUTERS: (state) => {
+      state.addRouters = []
+      state.routers = constantRouterMap
     }
   },
   actions: {
@@ -134,7 +180,7 @@ const permission = {
     GenerateRoutes ({ commit }, { roles }) {
       return new Promise(resolve => {
         // 根据角色获取有访问权限的路由
-        const accessedRouters = getAccessRouter(asyncRouterMap, roles)
+        const accessedRouters = getAccessRouter(cloneRoutes(asyncRouterMap), roles)
         commit('SET_ROUTERS', accessedRouters)
         resolve(accessedRouters)
       })

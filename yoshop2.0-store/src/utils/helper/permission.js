@@ -23,13 +23,14 @@ function plugin (Vue) {
         return permissions => {
           const [permission, action] = permissions.split('.')
           const roles = app.$store.getters.roles
+          const permissionsList = Array.isArray(roles.permissions) ? roles.permissions : []
           // 如果是超管用户直接返回true
           if (roles.isSuper) {
             return true
           }
           // console.log('permissionList', roles.permissions)
           // 查找指定的权限
-          const findPermission = roles.permissions.find((val) => {
+          const findPermission = permissionsList.find((val) => {
             return val.permissionId === permission
           })
           if (!findPermission) {
@@ -43,7 +44,6 @@ function plugin (Vue) {
           return findPermission.actionList.findIndex((val) => {
             return val === action
           }) > -1
-
         }
       }
     }

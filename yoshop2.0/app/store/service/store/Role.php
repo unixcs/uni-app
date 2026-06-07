@@ -105,7 +105,8 @@ class Role extends BaseService
     {
         $data = [];
         foreach ($menuList as $menu) {
-            if (static::isLegacyDeliveryMenu($menu)) {
+            $menuItem = is_array($menu) ? $menu : $menu->toArray();
+            if (static::isLegacyDeliveryMenu($menuItem)) {
                 continue;
             }
             if (!empty($menu['children'])) {

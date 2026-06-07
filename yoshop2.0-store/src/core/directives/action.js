@@ -21,17 +21,14 @@ const action = Vue.directive('action', {
     if (roles.isSuper) {
       return
     }
-    const elVal = vnode.context.$route.meta.permission
-    const permissionId = elVal instanceof String && [elVal] || elVal
-    roles.permissions.forEach(p => {
-      if (!permissionId.includes(p.permissionId)) {
-        return
-      }
-      // 无权限的话 抹除该元素
-      if (p.actionList && !p.actionList.includes(actionName)) {
-        el.parentNode && el.parentNode.removeChild(el) || (el.style.display = 'none')
-      }
-    })
+    const routeMeta = vnode.context.$route.meta || {}
+    const elVal = routeMeta.permission
+    const permissionId = Array.isArray(elVal) ? elVal : (typeof elVal === 'string' ? [elVal] : [])
+    const permissions = Array.isArray(roles.permissions) ? roles.permissions : []
+    const matchedPermission = permissions.find(p => permissionId.includes(p.permissionId))
+    if (!matchedPermission || !matchedPermission.actionList || !matchedPermission.actionList.includes(actionName)) {
+      el.parentNode && el.parentNode.removeChild(el) || (el.style.display = 'none')
+    }
   }
 })
 
