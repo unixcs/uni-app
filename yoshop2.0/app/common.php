@@ -17,6 +17,7 @@ declare (strict_types=1);
 use think\Response;
 use think\facade\Env;
 use think\facade\Log;
+use think\facade\Db;
 use think\facade\Config;
 use think\facade\Request;
 use cores\exception\BaseException;
@@ -465,7 +466,32 @@ function hide_mobile(string $mobile): string
  */
 function getStoreId(): int
 {
-    return 10001;
+    static $storeId = null;
+    if (!is_null($storeId)) {
+        return $storeId;
+    }
+
+    $appName = app_name();
+
+    if ($appName === 'store') {
+        $loginStoreId = \app\common\service\store\User::getLoginStoreId();
+        if (!empty($loginStoreId)) {
+            return $storeId = (int)$loginStoreId;
+        }
+    }
+
+    $requestStoreId = (int)request()->param('storeId');
+    if ($requestStoreId > 0) {
+        return $storeId = $requestStoreId;
+    }
+
+    $activeStoreId = (int)Db::name('store')
+        ->where('is_recycle', '=', 0)
+        ->where('is_delete', '=', 0)
+        ->order(['sort' => 'asc', 'store_id' => 'asc'])
+        ->value('store_id');
+
+    return $storeId = ($activeStoreId > 0 ? $activeStoreId : 10001);
 }
 
 /**

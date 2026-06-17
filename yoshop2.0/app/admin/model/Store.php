@@ -24,6 +24,61 @@ use think\model\relation\HasOne;
 class Store extends StoreModel
 {
     /**
+     * 新增商城
+     * 单商城模式: 仅当当前没有有效商城时允许新建
+     * @param array $data
+     * @return bool
+     */
+    public function add(array $data): bool
+    {
+        $data['user_name'] = strtolower(trim($data['user_name'] ?? ''));
+        if (empty($data['store_name'])) {
+            $this->error = '商城名称不能为空';
+            return false;
+        }
+        if (empty($data['user_name'])) {
+            $this->error = '商家用户名不能为空';
+            return false;
+        }
+        if (empty($data['password']) || empty($data['password_confirm'])) {
+            $this->error = '登录密码不能为空';
+            return false;
+        }
+        if ($data['password'] !== $data['password_confirm']) {
+            $this->error = '确认密码不正确';
+            return false;
+        }
+
+        $activeStoreId = self::withoutGlobalScope()
+            ->where('is_recycle', '=', 0)
+            ->where('is_delete', '=', 0)
+            ->value('store_id');
+        if (!empty($activeStoreId)) {
+            $this->error = '当前版本仅支持单商城，请先删除现有商城';
+            return false;
+        }
+        if (StoreUserModel::checkExist($data['user_name'])) {
+            $this->error = '商家用户名已存在';
+            return false;
+        }
+
+        return (bool)$this->transaction(function () use ($data) {
+            $this->save([
+                'store_name' => trim($data['store_name']),
+                'remark' => trim((string)($data['remark'] ?? '')),
+                'sort' => (int)($data['sort'] ?? 100),
+                'describe' => '',
+                'logo_image_id' => 0,
+                'custom_domain' => '',
+                'is_recycle' => 0,
+                'is_delete' => 0,
+            ]);
+            (new StoreUserModel)->add((int)$this['store_id'], $data);
+            return true;
+        });
+    }
+
+    /**
      * 关联商家用户记录 (超级管理员)
      * @return HasOne
      */
@@ -81,6 +136,21 @@ class Store extends StoreModel
      */
     public function recycle(bool $isRecycle = true): bool
     {
-        return $this->save(['is_recycle' => (int)$isRecycle]);
+        if (!$isRecycle) {
+            $activeStoreId = self::withoutGlobalScope()
+                ->where('is_recycle', '=', 0)
+                ->where('is_delete', '=', 0)
+                ->where('store_id', '<>', (int)$this['store_id'])
+                ->value('store_id');
+            if (!empty($activeStoreId)) {
+                $this->error = '当前版本仅支持单商城，请先删除现有商城';
+                return false;
+            }
+        }
+        return (bool)$this->transaction(function () use ($isRecycle) {
+            $this->save(['is_recycle' => (int)$isRecycle]);
+            StoreUserModel::setDelete((int)$this['store_id'], $isRecycle);
+            return true;
+        });
     }
 }

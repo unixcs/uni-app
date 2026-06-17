@@ -42,6 +42,14 @@
     5. 打开微信开发者工具 导入 打包完成的项目
     6. 检查没有运行错误，在右上方上传小程序
 
+##### 五、仅正式包需要切换生产 apiUrl 时
+
+    1. 默认不要直接改 config.js，避免污染本地开发配置
+    2. 仅当小程序正式包无法通过后台公网域名配置完成切换时，再临时注入正式 API 地址
+    3. 在 WSL/Linux 环境执行：MP_WEIXIN_API_URL="https://wx.gxwqb.cn/index.php?s=/api/" npm run build:mp-weixin
+    4. 构建脚本会在编译前临时改写 config.js 中的 apiUrl，并在编译结束后自动恢复本地配置
+    5. 如未设置 MP_WEIXIN_API_URL，则继续按当前本地 config.js 直接构建
+
 
 #### UNIAPP-页面展示
 ![前端展示](https://images.gitee.com/uploads/images/2021/0316/215102_7bcb0802_2166072.png "前端展示.png")
@@ -62,7 +70,6 @@
 本项目包含的第三方源码和二进制文件之版权信息另行标注。
 
 版权所有Copyright © 2017-2021 By 项目团队 (https://www.example.com) All rights reserved。
-
 
 
 

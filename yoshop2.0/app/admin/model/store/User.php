@@ -86,9 +86,9 @@ class User extends StoreUserModel
      * @param int $storeId
      * @return bool|false
      */
-    public static function setDelete(int $storeId): bool
+    public static function setDelete(int $storeId, bool $isDelete = true): bool
     {
-        static::update(['is_delete' => '1'], ['store_id' => $storeId]);
+        static::update(['is_delete' => $isDelete ? 1 : 0], ['store_id' => $storeId]);
         return true;
     }
 }

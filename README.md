@@ -25,6 +25,54 @@
 7. 配置 Nginx / PHP / MySQL / Redis
 8. 本地重新编译 `yoshop2.0-uniapp`
 
+## 标准运行环境要求
+
+> 为了避免“本地可运行、服务器报错”的情况，请尽量保持与生产环境一致的 PHP / 扩展 / 运行方式。
+
+### 已验证的生产环境
+- 操作系统：Ubuntu 22.04 LTS
+- Nginx：1.18+
+- PHP：8.3.x（当前生产验证版本为 8.3.31）
+- PHP-FPM：`php8.3-fpm`
+- MySQL：5.7+ / 8.0+
+- Redis：6+
+- Composer：2.x
+- 定时任务：`php think timer start`，建议由 systemd 托管
+
+### PHP 必需扩展
+- `bcmath`
+- `curl`
+- `gd`
+- `intl`
+- `json`
+- `mbstring`
+- `mysqli`
+- `mysqlnd`
+- `openssl`
+- `pdo`
+- `pdo_mysql`
+- `redis`
+- `simplexml`
+- `xml`
+- `xmlreader`
+- `xmlwriter`
+- `zip`
+- `fileinfo`
+- `dom`
+- `libxml`
+
+### 兼容性提醒
+- 本仓库已验证在 PHP 8.3 环境下运行。
+- 若本地与服务器 PHP 小版本不同，某些 vendor 兼容问题可能只在生产环境触发。
+- 本仓库已修复 `myclabs/php-enum` 在 PHP 8.3 下的 `JsonSerializable` 方法签名兼容问题。
+
+### 生产配置建议
+- `.env` 中 `APP_DEBUG=false`
+- `.env` 中 `APP_URL` 与线上域名保持一致
+- 数据库账号使用独立生产账号，不要留占位符
+- Redis 默认只监听本机回环地址，除非已做好 ACL / 内网隔离
+- 生产环境上线前确认 `yoshop2.0/public/admin` 与 `yoshop2.0/public/store` 已有编译产物
+
 如需后台前端，也可分别安装并编译：
 
 - `yoshop2.0-store`

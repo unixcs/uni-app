@@ -1,0 +1,13 @@
+[Unit]
+Description=YoShop 2.0 timer supervisor
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/yoshop/yoshop2.0
+ExecStart=/usr/bin/php think timer start
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,8 @@
 - `yoshop2.0/public/uploads/`：当前演示图片
 - `deploy/sql/`：基础安装 SQL 与演示增量 SQL
 - `deploy/env/`：环境变量模板
+- `deploy/scripts/`：基础 bootstrap、数据库备份/回滚、ACME 续期辅助脚本
+- `deploy/ops-support.md`：上线后运维支持清单（备份、回滚、监控、证书续期）
 
 ## 新服务器恢复步骤
 
@@ -25,6 +27,7 @@
    - `yoshop2.0-uniapp/`
    - `yoshop2.0-store/`
    - `yoshop2.0-admin/`
+9. 上线前后按 `deploy/ops-support.md` 完成数据库备份、回滚演练、监控观察与 ACME 续期核验
 
 ## 说明
 
@@ -32,3 +35,4 @@
 - 导入 SQL 后，演示商品与图片记录可直接恢复。
 - 当前代码已修复页面装修图的存储方式：数据库保存相对路径，接口输出时自动补全当前站点域名。
 - 对旧库可执行 `deploy/sql/fix-page-data-relative-paths.sql` 做一次性清理。
+- 生产运维支持的最小脚本与检查清单见 `deploy/ops-support.md`。

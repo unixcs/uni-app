@@ -90,7 +90,7 @@ class Role extends BaseService
         foreach ($menu['actions'] as $action) {
             $actionEntitySet[] = [
                 'describe' => $action['name'],
-                'action' => $action['action_mark'],
+                'action' => $action['action_mark'] ?? '',
             ];
         }
         return $actionEntitySet;
@@ -165,6 +165,10 @@ class Role extends BaseService
      */
     private static function getPermittedMenuList(int $storeUserId): array
     {
+        $userInfo = UserService::getLoginInfo();
+        if (!empty($userInfo['user']['is_super'])) {
+            return static::filterChildrenAction((new MenuModel)->getList());
+        }
         // 获取指定用户的所有角色ID
         $roleIds = UserRoleModel::getRoleIdsByUserId($storeUserId);
         // 根据角色ID集获取菜单列表集

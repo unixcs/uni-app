@@ -53,7 +53,11 @@ class Store extends Controller
      */
     public function add(): Json
     {
-        return $this->renderError('很抱歉，免费版暂不支持多开商城');
+        $model = new StoreModel;
+        if (!$model->add($this->postForm())) {
+            return $this->renderError($model->getError() ?: '操作失败');
+        }
+        return $this->renderSuccess('操作成功');
     }
 
     /**

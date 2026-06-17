@@ -13,6 +13,7 @@ declare (strict_types=1);
 namespace app\store\model\store;
 
 use app\common\library\helper;
+use app\common\model\Store as CommonStoreModel;
 use app\common\model\store\User as StoreUserModel;
 use app\store\service\store\User as StoreUserService;
 
@@ -48,12 +49,15 @@ class User extends StoreUserModel
         if (!$userInfo = $this->getUserInfoByLogin($data)) {
             return false;
         }
+        $storeInfo = CommonStoreModel::withoutGlobalScope()
+            ->where('store_id', '=', (int)$userInfo['store_id'])
+            ->find();
         // 验证商城状态是否正常
-        if (empty($userInfo['store']) || $userInfo['store']['is_delete']) {
+        if (empty($storeInfo) || $storeInfo['is_delete']) {
             $this->error = '登录失败, 未找到当前商城信息';
             return false;
         }
-        if ($userInfo['store']['is_recycle']) {
+        if ($storeInfo['is_recycle']) {
             $this->error = '登录失败, 当前商城已删除';
             return false;
         }
