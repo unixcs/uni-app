@@ -101,6 +101,18 @@ $replacements = [
             'replace' => "    #[\\ReturnTypeWillChange]\n    public function offsetSet(\$offset, \$value)\n",
         ],
     ],
+    'vendor/league/flysystem/src/UnableToCreateDirectory.php' => [
+        [
+            'search' => '        $message = "Unable to create a directory at {$dirname}. ${errorMessage}";' . "\n",
+            'replace' => '        $message = "Unable to create a directory at {$dirname}. {$errorMessage}";' . "\n",
+        ],
+    ],
+    'vendor/league/flysystem/src/UnableToCheckFileExistence.php' => [
+        [
+            'search' => '        return new UnableToCheckFileExistence("Unable to check file existence for: ${path}", 0, $exception);' . "\n",
+            'replace' => '        return new UnableToCheckFileExistence("Unable to check file existence for: {$path}", 0, $exception);' . "\n",
+        ],
+    ],
 ];
 
 $patched = [];
