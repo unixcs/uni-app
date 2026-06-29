@@ -7,7 +7,7 @@ bootstrap and does not deploy the full application code or frontend bundles.
 
 1. **Package install / base bootstrap**
    - Run `deploy/scripts/bootstrap-ubuntu22.04-production.sh` as root.
-   - Confirm nginx, mysql-server, redis-server, and `php8.3-fpm` are enabled.
+   - Confirm nginx, mysql-server, redis-server, `php8.3-fpm`, and `composer` are available.
 
 2. **Place the application env file**
    - Copy `deploy/env/yoshop2.0.env.example` to `/opt/yoshop/yoshop2.0/.env`.
@@ -20,28 +20,32 @@ bootstrap and does not deploy the full application code or frontend bundles.
    - Import `deploy/sql/install.sql`.
    - Import `deploy/sql/demo-content.sql` or other patch SQL only if required.
 
-4. **Enable Nginx site**
+4. **Install backend PHP dependencies**
+   - Run `cd /opt/yoshop/yoshop2.0 && composer install`.
+   - Do not pass `--no-scripts`, otherwise the PHP 8.3 compatibility patches will not run.
+
+5. **Enable Nginx site**
    - Copy `deploy/nginx/wx.gxwqb.cn.conf` to `/etc/nginx/sites-available/`.
    - Link it into `/etc/nginx/sites-enabled/`.
    - Validate with `nginx -t`, then reload nginx.
 
-5. **Fix permissions**
+6. **Fix permissions**
    - Ensure `/opt/yoshop/yoshop2.0/public`, `/public/admin`, and `/public/store` exist.
    - Keep the web user able to read the site tree.
    - Recheck ownership after any future code upload.
 
-6. **Enable the timer supervisor**
+7. **Enable the timer supervisor**
    - Copy `deploy/systemd/yoshop2.0-timer.service` into `/etc/systemd/system/`.
    - Run `systemctl daemon-reload`.
    - Enable and start `yoshop2.0-timer.service` so `php think timer start` is supervised by systemd and logs to journald.
 
-7. **Check services**
+8. **Check services**
    - Verify `systemctl status php8.3-fpm nginx mysql redis-server`.
    - Verify `systemctl status yoshop2.0-timer.service`.
    - Confirm PHP-FPM socket path is `/run/php/php8.3-fpm.sock`.
    - Visit `https://wx.gxwqb.cn/` only after DNS and TLS are ready.
 
-8. **Prepare ops support basics**
+9. **Prepare ops support basics**
    - Create a backup location such as `/opt/yoshop/backups`.
    - Keep `deploy/scripts/backup-mysql.sh` and `deploy/scripts/rollback-mysql.sh` available for manual ops.
    - Recommended production DB name in current deployment: `yoshop2`.

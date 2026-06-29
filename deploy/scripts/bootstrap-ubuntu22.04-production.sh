@@ -40,6 +40,7 @@ run apt-get update
 
 # PHP 8.3 is the explicit target for this repo's docs and runtime hints.
 run apt-get install -y \
+  composer \
   nginx \
   mysql-server \
   redis-server \
@@ -74,9 +75,10 @@ Bootstrap complete.
 Next steps (manual secure tasks remain):
 1) Copy deploy/env/yoshop2.0.env.example to /opt/yoshop/yoshop2.0/.env and fill in production values.
 2) Run mysql_secure_installation, then create a dedicated database and application user.
-3) Import the project SQL files as needed (deploy/sql/install.sql, then demo/patch SQL if required).
-4) Place the Nginx site config from deploy/nginx/ into /etc/nginx/sites-available and enable it.
-5) Verify php8.3-fpm is listening on /run/php/php8.3-fpm.sock and reload nginx after testing.
-6) Review SSL, backups, firewall rules, and any external service credentials before go-live.
+3) Run `cd /opt/yoshop/yoshop2.0 && composer install` without `--no-scripts`.
+4) Import the project SQL files as needed (deploy/sql/install.sql, then demo/patch SQL if required).
+5) Place the Nginx site config from deploy/nginx/ into /etc/nginx/sites-available and enable it.
+6) Verify php8.3-fpm is listening on /run/php/php8.3-fpm.sock and reload nginx after testing.
+7) Review SSL, backups, firewall rules, and any external service credentials before go-live.
 
 EOF

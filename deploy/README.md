@@ -18,16 +18,18 @@
 
 1. `git clone <your-repo-url>`
 2. 复制 `deploy/env/yoshop2.0.env.example` 为 `yoshop2.0/.env` 并按实际环境填写
-3. 进入 `yoshop2.0/` 执行 `composer install`
-4. 导入 `deploy/sql/install.sql`
-5. 导入 `deploy/sql/demo-content.sql`
-6. 如是旧页面装修数据，可执行 `deploy/sql/fix-page-data-relative-paths.sql`
-7. 配置 Nginx / PHP / MySQL / Redis
-8. 按需安装前端依赖并重新编译：
+3. 确保服务器已安装 `composer`
+4. 进入 `yoshop2.0/` 执行 `composer install`
+5. 不要使用 `composer install --no-scripts`，否则 PHP 8.3 兼容补丁不会自动执行
+6. 导入 `deploy/sql/install.sql`
+7. 导入 `deploy/sql/demo-content.sql`
+8. 如是旧页面装修数据，可执行 `deploy/sql/fix-page-data-relative-paths.sql`
+9. 配置 Nginx / PHP / MySQL / Redis
+10. 按需安装前端依赖并重新编译：
    - `yoshop2.0-uniapp/`
    - `yoshop2.0-store/`
    - `yoshop2.0-admin/`
-9. 上线前后按 `deploy/ops-support.md` 完成数据库备份、回滚演练、监控观察与 ACME 续期核验
+11. 上线前后按 `deploy/ops-support.md` 完成数据库备份、回滚演练、监控观察与 ACME 续期核验
 
 ## 说明
 

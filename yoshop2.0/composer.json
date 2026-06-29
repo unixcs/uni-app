@@ -76,7 +76,11 @@
         }
     },
     "scripts": {
+        "compat:php83": [
+            "@php scripts/php83-vendor-compat.php"
+        ],
         "post-autoload-dump": [
+            "@compat:php83",
             "@php think service:discover",
             "@php think vendor:publish"
         ]

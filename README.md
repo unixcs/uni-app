@@ -64,7 +64,8 @@
 ### 兼容性提醒
 - 本仓库已验证在 PHP 8.3 环境下运行。
 - 若本地与服务器 PHP 小版本不同，某些 vendor 兼容问题可能只在生产环境触发。
-- 本仓库已修复 `myclabs/php-enum` 在 PHP 8.3 下的 `JsonSerializable` 方法签名兼容问题。
+- 本仓库通过 Composer 的 `post-autoload-dump` 自动补丁修复已知 PHP 8.3 vendor 兼容问题，包括 `myclabs/php-enum`、`overtrue/socialite`、`overtrue/wechat` 和 `easywechat-composer` 的旧接口签名问题。
+- 部署时不要使用 `composer install --no-scripts`，否则兼容补丁不会自动执行。
 
 ### 生产配置建议
 - `.env` 中 `APP_DEBUG=false`
