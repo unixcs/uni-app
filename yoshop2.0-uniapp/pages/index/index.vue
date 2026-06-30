@@ -24,8 +24,6 @@
   import Page from '@/components/page'
   import PrivacyPopup from '@/components/privacy-popup'
 
-  const App = getApp()
-
   export default {
     components: {
       Page,
@@ -91,9 +89,9 @@
           .then(result => {
             console.info('首页 page/detail 返回', result)
             // 设置页面数据
-            const { data: { pageData } } = result
-            app.page = pageData.page
-            app.items = Array.isArray(pageData.items) ? pageData.items : []
+            const pageData = result && result.data && result.data.pageData ? result.data.pageData : {}
+            app.page = pageData.page || {}
+            app.items = app.normalizeItems(pageData.items)
             // 设置顶部导航栏栏
             app.setPageBar()
           })
@@ -130,6 +128,20 @@
           frontColor: page.style.titleTextColor === 'white' ? '#ffffff' : '#000000',
           backgroundColor: page.style.titleBackgroundColor
         })
+      },
+
+      normalizeItems(items) {
+        if (!Array.isArray(items)) {
+          return []
+        }
+        return items
+          .filter(item => item && typeof item === 'object' && typeof item.type === 'string')
+          .map(item => ({
+            ...item,
+            style: item.style && typeof item.style === 'object' ? item.style : {},
+            params: item.params && typeof item.params === 'object' ? item.params : {},
+            data: Array.isArray(item.data) ? item.data : []
+          }))
       }
 
     },

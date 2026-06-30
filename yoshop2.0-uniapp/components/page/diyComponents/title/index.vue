@@ -1,25 +1,25 @@
 <template>
   <!-- 标题文本 -->
-  <view class="diy-title" :style="{ padding: `${itemStyle.paddingY * 2}rpx 30rpx`, background: itemStyle.background }">
-    <div class="title-content">
+  <view class="diy-title" :style="wrapStyle">
+    <view class="title-content">
       <!-- 标题文字 -->
-      <div class="title">
+      <view class="title">
         <text
-          :style="{ color: itemStyle.titleTextColor, fontSize: `${params.titleFontSize * 2}rpx`, fontWeight: params.titleFontWeight }">{{ params.title }}</text>
-      </div>
+          :style="titleStyle">{{ safeParams.title || '' }}</text>
+      </view>
       <!-- 查看更多 -->
-      <div v-if="params.more.enable" class="more-content" :style="{ color: itemStyle.moreTextColor }" @click="onLink(params.more.link)">
-        <text class="more-text">{{ params.more.text }}</text>
-        <text v-if="params.more.enableIcon" class="more-icon">
+      <view v-if="safeMore.enable" class="more-content" :style="moreStyle" @click="onLink(safeMore.link)">
+        <text class="more-text">{{ safeMore.text || '' }}</text>
+        <text v-if="safeMore.enableIcon" class="more-icon">
           <text class="iconfont icon-arrow-right"></text>
         </text>
-      </div>
-    </div>
+      </view>
+    </view>
     <!-- 描述文字 -->
-    <div class="desc-content">
+    <view class="desc-content">
       <text
-        :style="{ color: itemStyle.descTextColor, fontSize: `${params.descFontSize * 2}rpx`, fontWeight: params.descFontWeight }">{{ params.desc }}</text>
-    </div>
+        :style="descStyle">{{ safeParams.desc || '' }}</text>
+    </view>
   </view>
 </template>
 
@@ -38,6 +38,42 @@
     },
 
     mixins: [mixin],
+    computed: {
+      safeItemStyle() {
+        return this.itemStyle || {}
+      },
+      safeParams() {
+        return this.params || {}
+      },
+      safeMore() {
+        return this.safeParams.more || {}
+      },
+      wrapStyle() {
+        return {
+          padding: `${(Number(this.safeItemStyle.paddingY) || 0) * 2}rpx 30rpx`,
+          background: this.safeItemStyle.background || 'transparent'
+        }
+      },
+      titleStyle() {
+        return {
+          color: this.safeItemStyle.titleTextColor || '#323233',
+          fontSize: `${(Number(this.safeParams.titleFontSize) || 14) * 2}rpx`,
+          fontWeight: this.safeParams.titleFontWeight || 'normal'
+        }
+      },
+      moreStyle() {
+        return {
+          color: this.safeItemStyle.moreTextColor || '#969799'
+        }
+      },
+      descStyle() {
+        return {
+          color: this.safeItemStyle.descTextColor || '#969799',
+          fontSize: `${(Number(this.safeParams.descFontSize) || 12) * 2}rpx`,
+          fontWeight: this.safeParams.descFontWeight || 'normal'
+        }
+      }
+    },
 
     /**
      * 组件的方法列表

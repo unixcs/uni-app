@@ -1,22 +1,22 @@
 <template>
   <!-- 头条快报 -->
-  <view class="diy-special" :style="{ padding: `${itemStyle.paddingTop * 2}rpx 0`, background: itemStyle.background }">
+  <view class="diy-special" :style="wrapStyle">
     <view class="special-left" @click="handleNavMore()">
-      <image class="image" mode="widthFix" :src="params.image" />
+      <image class="image" mode="widthFix" :src="safeParams.image" />
     </view>
-    <div class="special-content" :class="[`display_${params.display}`]">
+    <view class="special-content" :class="[`display_${safeParams.display || 1}`]">
       <swiper :autoplay="true" :interval="1500" :duration="800" :circular="true" :vertical="true"
-        :display-multiple-items="itemStyle.display">
+        :display-multiple-items="Number(safeItemStyle.display) || 1">
         <swiper-item v-for="(dataItm, idx) in dataList" :key="idx">
           <view class="content-item oneline-hide" @click="handleNavDetail(dataItm.article_id)">
-            <text :style="{ color: itemStyle.textColor }">{{ dataItm.title }}</text>
+            <text :style="{ color: safeItemStyle.textColor || '#141414' }">{{ dataItm.title }}</text>
           </view>
         </swiper-item>
       </swiper>
-    </div>
-    <div class="special-more" @click="handleNavMore()">
+    </view>
+    <view class="special-more" @click="handleNavMore()">
       <text class="iconfont icon-arrow-right"></text>
-    </div>
+    </view>
   </view>
 </template>
 
@@ -37,6 +37,20 @@
     },
 
     mixins: [mixin],
+    computed: {
+      safeItemStyle() {
+        return this.itemStyle || {}
+      },
+      safeParams() {
+        return this.params || {}
+      },
+      wrapStyle() {
+        return {
+          padding: `${(Number(this.safeItemStyle.paddingTop) || 0) * 2}rpx 0`,
+          background: this.safeItemStyle.background || 'transparent'
+        }
+      }
+    },
 
     /**
      * 组件的方法列表
