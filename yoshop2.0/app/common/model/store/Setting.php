@@ -32,6 +32,18 @@ use app\common\enum\{
  */
 class Setting extends BaseModel
 {
+    private const VIRTUAL_PAYMENT_ENV_MAP = [
+        'enabled' => ['virtual_payment.enabled', null],
+        'env' => ['virtual_payment.env', null],
+        'offer_id' => ['virtual_payment.offer_id', null],
+        'sandbox_app_key' => ['virtual_payment.sandbox_app_key', null],
+        'production_app_key' => ['virtual_payment.production_app_key', null],
+        'merchant_id' => ['virtual_payment.merchant_id', null],
+        'notify_base_url' => ['virtual_payment.notify_base_url', null],
+        'message_push_token' => ['virtual_payment.message_push_token', null],
+        'message_push_encoding_aes_key' => ['virtual_payment.message_push_encoding_aes_key', null],
+    ];
+
     // 定义表名
     protected $name = 'store_setting';
 
@@ -69,7 +81,11 @@ class Setting extends BaseModel
     public static function getItem(string $key, int $storeId = null)
     {
         $data = self::getAll($storeId);
-        return isset($data[$key]) ? $data[$key]['values'] : [];
+        $values = isset($data[$key]) ? $data[$key]['values'] : [];
+        if ($key === SettingEnum::VIRTUAL_PAYMENT) {
+            $values = self::mergeVirtualPaymentEnvOverrides((array)$values);
+        }
+        return $values;
     }
 
     /**
@@ -371,7 +387,41 @@ class Setting extends BaseModel
                         'mpwxkf' => [],
                     ]
                 ]
+            ],
+            // 小程序虚拟支付设置
+            SettingEnum::VIRTUAL_PAYMENT => [
+                'key' => SettingEnum::VIRTUAL_PAYMENT,
+                'describe' => '小程序虚拟支付设置',
+                'values' => [
+                    'enabled' => 0,
+                    'env' => 1,
+                    'offer_id' => '',
+                    'sandbox_app_key' => '',
+                    'production_app_key' => '',
+                    'merchant_id' => '',
+                    'notify_base_url' => '',
+                    'message_push_token' => '',
+                    'message_push_encoding_aes_key' => '',
+                ]
             ]
         ];
+    }
+
+    /**
+     * Allow deployment-time secrets to override stored virtual payment config.
+     *
+     * @param array $values
+     * @return array
+     */
+    private static function mergeVirtualPaymentEnvOverrides(array $values): array
+    {
+        foreach (self::VIRTUAL_PAYMENT_ENV_MAP as $field => [$envKey, $default]) {
+            $envValue = env($envKey, $default);
+            if ($envValue === null || $envValue === '') {
+                continue;
+            }
+            $values[$field] = in_array($field, ['enabled', 'env'], true) ? (int)$envValue : (string)$envValue;
+        }
+        return $values;
     }
 }

@@ -63,6 +63,7 @@ class OrderRefund extends OrderRefundModel
             ->join('order', 'order.order_id = refund.order_id')
             ->join('user', 'user.user_id = order.user_id')
             ->where($filter)
+            ->where('order.is_delete', '=', 0)
             ->where('refund.store_id', '=', (int)static::$storeId)
             ->order(['refund.create_time' => 'desc', 'refund.' . $this->getPk()])
             ->paginate(10);
@@ -92,7 +93,13 @@ class OrderRefund extends OrderRefundModel
      */
     public static function detailForStore(int $orderRefundId, array $with = [])
     {
-        return static::queryForStore()->with($with)->find($orderRefundId);
+        return static::queryForStore()
+            ->alias('refund')
+            ->field('refund.*')
+            ->join('order', 'order.order_id = refund.order_id')
+            ->where('order.is_delete', '=', 0)
+            ->with($with)
+            ->find($orderRefundId);
     }
 
     /**
@@ -153,7 +160,7 @@ class OrderRefund extends OrderRefundModel
             $this->error = '审核状态不合法';
             return false;
         }
-        $order = Order::detail($this['order_id'], ['goods']);
+        $order = Order::detail($this['order_id'], ['goods', 'trade']);
         $isServiceOrder = Order::isServiceOrderData($order);
 
         if (!$isServiceOrder) {
@@ -176,7 +183,7 @@ class OrderRefund extends OrderRefundModel
             if (empty($refund)) {
                 throwError('未找到该售后单记录');
             }
-            $order = Order::detail($refund['order_id'], ['goods']);
+            $order = Order::detail($refund['order_id'], ['goods', 'trade']);
             if (empty($order) || !Order::isServiceOrderData($order)) {
                 throwError('当前售后单仅支持服务订单退款审核');
             }
@@ -242,9 +249,12 @@ class OrderRefund extends OrderRefundModel
      */
     public function getRefundTotal(): int
     {
-        return $this->where('type', '=', RefundTypeEnum::SERVICE)
-            ->where('store_id', '=', (int)static::$storeId)
-            ->where('status', '=', RefundStatusEnum::NORMAL)
+        return $this->alias('refund')
+            ->join('order', 'order.order_id = refund.order_id')
+            ->where('refund.type', '=', RefundTypeEnum::SERVICE)
+            ->where('refund.store_id', '=', (int)static::$storeId)
+            ->where('refund.status', '=', RefundStatusEnum::NORMAL)
+            ->where('order.is_delete', '=', 0)
             ->count();
     }
 
@@ -260,7 +270,7 @@ class OrderRefund extends OrderRefundModel
             return false;
         }
         return $this->transaction(function () use ($applyDesc) {
-            $order = Order::detail($this['order_id'], ['goods']);
+            $order = Order::detail($this['order_id'], ['goods', 'trade']);
             if (empty($order)) {
                 throwError('订单不存在');
             }
@@ -291,16 +301,27 @@ class OrderRefund extends OrderRefundModel
     private function executeFullRefundAndCloseOrder(Order $order, array $saveData): void
     {
         $refundMoney = Order::getRefundableAmount($order);
-        if (!(new RefundService)->handle($order, $refundMoney)) {
+        if (!(new RefundService)->handle($order, $refundMoney, [
+            'order_refund_id' => (int)$this['order_refund_id'],
+        ])) {
             throwError('执行订单退款失败');
+        }
+        $saveData['refund_money'] = $refundMoney;
+        if ((string)($order['trade']['platform'] ?? '') === 'wechat_virtual') {
+            $saveData['status'] = RefundStatusEnum::NORMAL;
+            if ($this->save($saveData) === false) {
+                throwError('更新退款单状态失败');
+            }
+            return;
         }
         OrderService::cancelEvent($order);
         if ($order->save(['order_status' => OrderStatusEnum::CANCELLED]) === false) {
             throwError('更新订单状态失败');
         }
         $saveData['status'] = RefundStatusEnum::COMPLETED;
-        $saveData['refund_money'] = $refundMoney;
-        $this->save($saveData);
+        if ($this->save($saveData) === false) {
+            throwError('更新退款单状态失败');
+        }
     }
 
     /**

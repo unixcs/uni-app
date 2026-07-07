@@ -26,6 +26,8 @@ class WxBase
 {
     use ErrorTrait;
 
+    private const STABLE_ACCESS_TOKEN_URI = 'https://api.weixin.qq.com/cgi-bin/stable_token';
+
     protected string $appId;
     protected string $appSecret;
 
@@ -48,31 +50,91 @@ class WxBase
 
     /**
      * 获取access_token
+     * 优先使用 stable_token，避免多个进程/服务刷新普通 access_token 时产生
+     * "access_token is invalid or not latest" 竞态。
+     *
      * @return mixed
      * @throws \cores\exception\BaseException
      */
-    protected function getAccessToken()
+    protected function getAccessToken(bool $forceRefresh = false)
     {
-        $cacheKey = $this->appId . '@access_token';
-        if (!Cache::get($cacheKey)) {
-            // 请求API获取 access_token
-            $url = "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={$this->appId}&secret={$this->appSecret}";
-            $result = $this->get($url);
-            $response = $this->jsonDecode($result);
-            if (array_key_exists('errcode', $response)) {
-                throwError("access_token获取失败，错误信息：{$result}");
-            }
-            // 记录日志
-            log_record([
-                'name' => '获取access_token',
-                'url' => $url,
-                'appId' => $this->appId,
-                'result' => $result
-            ]);
-            // 写入缓存
-            Cache::set($cacheKey, $response['access_token'], 6000);
+        $cacheKey = $this->appId . '@stable_access_token';
+        if ($forceRefresh) {
+            Cache::delete($cacheKey);
         }
-        return Cache::get($cacheKey);
+        if ($cached = Cache::get($cacheKey)) {
+            return $cached;
+        }
+
+        $response = $this->requestStableAccessToken($forceRefresh);
+        if (!isset($response['access_token']) || trim((string)$response['access_token']) === '') {
+            throwError('stable_access_token获取失败，微信返回中缺少 access_token');
+        }
+
+        $ttl = max(60, (int)($response['expires_in'] ?? 7200) - 200);
+        log_record([
+            'name' => '获取stable_access_token',
+            'url' => self::STABLE_ACCESS_TOKEN_URI,
+            'appId' => $this->appId,
+            'force_refresh' => $forceRefresh ? 1 : 0,
+            'result' => helper::jsonEncode([
+                'expires_in' => (int)($response['expires_in'] ?? 0),
+                'hint' => 'token body omitted from log',
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
+        Cache::set($cacheKey, (string)$response['access_token'], $ttl);
+        return (string)$response['access_token'];
+    }
+
+    /**
+     * 强制刷新 access_token
+     * @return string
+     * @throws \cores\exception\BaseException
+     */
+    protected function refreshAccessToken(): string
+    {
+        return (string)$this->getAccessToken(true);
+    }
+
+    /**
+     * 判断微信返回是否属于 access_token 失效/非最新态
+     * @param array $response
+     * @return bool
+     */
+    protected function isInvalidAccessTokenResponse(array $response): bool
+    {
+        $errCode = (int)($response['errcode'] ?? 0);
+        $errMsg = strtolower((string)($response['errmsg'] ?? ''));
+        if ($errCode === 40001) {
+            return true;
+        }
+        if ($errMsg === '') {
+            return false;
+        }
+        return str_contains($errMsg, 'access_token is invalid or not latest')
+            || str_contains($errMsg, 'invalid credential')
+            || str_contains($errMsg, 'could get access_token by getstableaccesstoken');
+    }
+
+    /**
+     * @param bool $forceRefresh
+     * @return array
+     * @throws \cores\exception\BaseException
+     */
+    private function requestStableAccessToken(bool $forceRefresh = false): array
+    {
+        $payload = helper::jsonEncode([
+            'grant_type' => 'client_credential',
+            'appid' => $this->appId,
+            'secret' => $this->appSecret,
+            'force_refresh' => $forceRefresh,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $result = $this->post(self::STABLE_ACCESS_TOKEN_URI, $payload);
+        $response = (array)$this->jsonDecode($result);
+        if (array_key_exists('errcode', $response) && (int)$response['errcode'] !== 0) {
+            throwError("stable_access_token获取失败，错误信息：{$result}");
+        }
+        return $response;
     }
 
     /**

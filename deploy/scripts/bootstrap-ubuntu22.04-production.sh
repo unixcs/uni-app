@@ -61,12 +61,14 @@ run apt-get install -y \
 run systemctl enable --now nginx mysql redis-server php8.3-fpm
 
 run install -d -o "${WEB_USER}" -g "${WEB_GROUP}" -m 0755 "${PUBLIC_DIR}" "${PUBLIC_DIR}/admin" "${PUBLIC_DIR}/store"
+run install -d -o "${WEB_USER}" -g "${WEB_GROUP}" -m 0775 "${PUBLIC_DIR}/uploads" "${APP_ROOT}/runtime"
 
 # Keep the application tree readable by the web user while preserving standard
 # directory/file modes for future code deployment.
 run chown -R "${WEB_USER}:${WEB_GROUP}" "${APP_ROOT}"
 run find "${APP_ROOT}" -type d -exec chmod 0755 {} +
 run find "${APP_ROOT}" -type f -exec chmod 0644 {} +
+run chmod 0775 "${PUBLIC_DIR}/uploads" "${APP_ROOT}/runtime"
 
 cat <<'EOF'
 

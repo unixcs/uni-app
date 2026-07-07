@@ -52,6 +52,10 @@ class PaymentTrade extends PaymentTradeModel
         $model = new static;
         // 查询是否存在交易记录
         $record = $model->detailByOrderId($orderInfo['order_id'], $method, $client, $orderType);
+        $outTradeNo = (string)($payment['out_trade_no'] ?? '');
+        if ($record && $model->shouldCreateNewAttempt($record, $outTradeNo, $payment)) {
+            $record = null;
+        }
         // 新增或者更新记录
         return ($record ?: $model)->save([
             'client' => $client,
@@ -60,9 +64,17 @@ class PaymentTrade extends PaymentTradeModel
             'order_id' => $orderInfo['order_id'],
             'order_no' => $orderInfo['order_no'],
             'user_id' => $orderInfo['user_id'],
-            'out_trade_no' => $payment['out_trade_no'] ?? '',
+            'out_trade_no' => $outTradeNo,
             'prepay_id' => $payment['prepay_id'] ?? '',
-            'trade_status' => TradeStatusEnum::UNPAID,
+            'trade_state' => TradeStatusEnum::UNPAID,
+            'platform' => $payment['platform'] ?? '',
+            'env' => isset($payment['env']) ? (int)$payment['env'] : 0,
+            'product_id' => $payment['product_id'] ?? '',
+            'goods_price' => isset($payment['goods_price']) ? (int)$payment['goods_price'] : 0,
+            'attach' => $payment['attach'] ?? '',
+            'notify_times' => isset($payment['notify_times']) ? (int)$payment['notify_times'] : 0,
+            'last_notify_time' => isset($payment['last_notify_time']) ? (int)$payment['last_notify_time'] : 0,
+            'payload_snapshot' => $payment['payload_snapshot'] ?? '',
             'store_id' => self::$storeId,
         ]);
     }
@@ -83,6 +95,7 @@ class PaymentTrade extends PaymentTradeModel
             ->where('order_type', '=', $orderType)
             ->where('client', '=', $client)
             ->where('pay_method', '=', $method)
+            ->order('trade_id', 'desc')
             ->find();
         if (empty($detail)) {
             return null;
@@ -91,5 +104,26 @@ class PaymentTrade extends PaymentTradeModel
             throwError('该支付订单已完成交易');
         }
         return $detail;
+    }
+
+    /**
+     * 判断是否需要为同一订单保留新的支付尝试。
+     * 虚拟支付的旧 out_trade_no 仍可能继续收到通知或查单结果，不能被覆盖。
+     * @param mixed $record
+     * @param string $outTradeNo
+     * @param array $payment
+     * @return bool
+     */
+    private function shouldCreateNewAttempt($record, string $outTradeNo, array $payment): bool
+    {
+        if ($outTradeNo === '') {
+            return false;
+        }
+        if ((string)$record['out_trade_no'] === $outTradeNo) {
+            return false;
+        }
+        $existingPlatform = (string)($record['platform'] ?? '');
+        $incomingPlatform = (string)($payment['platform'] ?? '');
+        return $existingPlatform === 'wechat_virtual' || $incomingPlatform === 'wechat_virtual';
     }
 }

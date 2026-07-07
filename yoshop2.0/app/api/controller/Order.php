@@ -49,7 +49,7 @@ class Order extends Controller
      * @throws \think\db\exception\DbException
      * @throws \think\db\exception\ModelNotFoundException
      */
-    public function detail(int $orderId): Json
+    public function detail(string $orderId): Json
     {
         // 订单详情
         $model = OrderModel::getUserOrderDetail($orderId);

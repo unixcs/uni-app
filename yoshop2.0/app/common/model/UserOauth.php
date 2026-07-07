@@ -39,6 +39,7 @@ class UserOauth extends BaseModel
         return (new static)->where('oauth_id', '=', $oauthId)
             ->where('oauth_type', '=', $oauthType)
             ->where('is_delete', '=', 0)
+            ->order(['update_time' => 'desc', 'id' => 'desc'])
             ->value('user_id');
     }
 
@@ -53,6 +54,7 @@ class UserOauth extends BaseModel
         return (new static)->where('user_id', '=', $userId)
             ->where('oauth_type', '=', $oauthType)
             ->where('is_delete', '=', 0)
+            ->order(['update_time' => 'desc', 'id' => 'desc'])
             ->value('oauth_id');
     }
 
@@ -79,6 +81,19 @@ class UserOauth extends BaseModel
     {
         return (new static)->where('user_id', '=', $userId)
             ->where('oauth_type', '=', $oauthType)
+            ->where('is_delete', '=', 0)
+            ->order(['update_time' => 'desc', 'id' => 'desc'])
             ->find();
+    }
+
+    /**
+     * 根据用户ID获取session_key
+     * @param int $userId
+     * @param string $oauthType
+     * @return string
+     */
+    public static function getSessionKeyByUserId(int $userId, string $oauthType): string
+    {
+        return (string)(static::getOauth($userId, $oauthType)['session_key'] ?? '');
     }
 }

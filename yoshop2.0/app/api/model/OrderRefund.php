@@ -33,6 +33,70 @@ use cores\exception\BaseException;
 class OrderRefund extends OrderRefundModel
 {
     /**
+     * 构建统一的服务退款状态投影
+     * @param array $data
+     * @return array
+     */
+    public static function buildServiceProjection(array $data): array
+    {
+        $status = (int)($data['status'] ?? RefundStatusEnum::NORMAL);
+        $auditStatus = (int)($data['audit_status'] ?? AuditStatusEnum::WAIT);
+
+        if ($status === RefundStatusEnum::COMPLETED) {
+            return [
+                'state' => $status,
+                'state_text' => '已退款',
+                'service_state' => 'refunded',
+                'service_state_text' => '已退款',
+                'audit_status' => $auditStatus,
+                'is_terminal' => true,
+            ];
+        }
+
+        if ($status === RefundStatusEnum::CANCELLED) {
+            return [
+                'state' => $status,
+                'state_text' => '已取消',
+                'service_state' => 'cancelled',
+                'service_state_text' => '已取消',
+                'audit_status' => $auditStatus,
+                'is_terminal' => true,
+            ];
+        }
+
+        if ($status === RefundStatusEnum::REJECTED) {
+            return [
+                'state' => $status,
+                'state_text' => '退款已拒绝',
+                'service_state' => 'rejected',
+                'service_state_text' => '退款已拒绝',
+                'audit_status' => $auditStatus,
+                'is_terminal' => true,
+            ];
+        }
+
+        if ($auditStatus === AuditStatusEnum::WAIT) {
+            return [
+                'state' => $status,
+                'state_text' => '退款审核中',
+                'service_state' => 'reviewing',
+                'service_state_text' => '退款审核中',
+                'audit_status' => $auditStatus,
+                'is_terminal' => false,
+            ];
+        }
+
+        return [
+            'state' => $status,
+            'state_text' => '退款处理中',
+            'service_state' => 'processing',
+            'service_state_text' => '退款处理中',
+            'audit_status' => $auditStatus,
+            'is_terminal' => false,
+        ];
+    }
+
+    /**
      * 隐藏字段
      * @var array
      */
@@ -65,26 +129,7 @@ class OrderRefund extends OrderRefundModel
      */
     public function getStateTextAttr($value, $data): string
     {
-        // 已完成
-        if ($data['status'] == RefundStatusEnum::COMPLETED) {
-            return '已退款';
-        }
-        // 已取消
-        if ($data['status'] == RefundStatusEnum::CANCELLED) {
-            return '已取消';
-        }
-        // 已拒绝
-        if ($data['status'] == RefundStatusEnum::REJECTED) {
-            return '已拒绝退款';
-        }
-        // 进行中
-        if ($data['status'] == RefundStatusEnum::NORMAL) {
-            if ($data['audit_status'] == AuditStatusEnum::WAIT) {
-                return '退款审核中';
-            }
-            return '退款处理中';
-        }
-        return $value;
+        return static::buildServiceProjection((array)$data)['state_text'] ?? (string)$value;
     }
 
     /**
@@ -95,16 +140,7 @@ class OrderRefund extends OrderRefundModel
      */
     public function getServiceStateAttr($value, $data): string
     {
-        if ($data['status'] == RefundStatusEnum::COMPLETED) {
-            return 'refunded';
-        }
-        if ($data['status'] == RefundStatusEnum::CANCELLED) {
-            return 'cancelled';
-        }
-        if ($data['status'] == RefundStatusEnum::REJECTED) {
-            return 'rejected';
-        }
-        return $data['audit_status'] == AuditStatusEnum::WAIT ? 'reviewing' : 'processing';
+        return static::buildServiceProjection((array)$data)['service_state'] ?? '';
     }
 
     /**
@@ -115,7 +151,7 @@ class OrderRefund extends OrderRefundModel
      */
     public function getServiceStateTextAttr($value, $data): string
     {
-        return $this->getStateTextAttr($value, $data);
+        return static::buildServiceProjection((array)$data)['service_state_text'] ?? (string)$value;
     }
 
     /**
@@ -151,9 +187,13 @@ class OrderRefund extends OrderRefundModel
         $userId = UserService::getCurrentLoginUserId();
         // 查询列表记录
         return $this->with(['orderGoods.image', 'orderData'])
+            ->alias('refund')
+            ->field('refund.*')
+            ->join('order', 'order.order_id = refund.order_id')
             ->where($filter)
-            ->where('user_id', '=', $userId)
-            ->order(['create_time' => 'desc'])
+            ->where('refund.user_id', '=', $userId)
+            ->where('order.is_delete', '=', 0)
+            ->order(['refund.create_time' => 'desc'])
             ->paginate(15);
     }
 
@@ -169,11 +209,15 @@ class OrderRefund extends OrderRefundModel
         // 关联查询
         $with = $isWith ? ['orderGoods' => ['image'], 'orderData'] : [];
         // 获取记录
-        $detail = static::detail([
-            'user_id' => UserService::getCurrentLoginUserId(),
-            'order_refund_id' => $orderRefundId,
-            'type' => RefundTypeEnum::SERVICE,
-        ], $with);
+        $detail = (new static)->with($with)
+            ->alias('refund')
+            ->field('refund.*')
+            ->join('order', 'order.order_id = refund.order_id')
+            ->where('refund.user_id', '=', UserService::getCurrentLoginUserId())
+            ->where('refund.order_refund_id', '=', $orderRefundId)
+            ->where('refund.type', '=', RefundTypeEnum::SERVICE)
+            ->where('order.is_delete', '=', 0)
+            ->find();
         empty($detail) && throwError('未找到该售后单');
         return $detail;
     }
@@ -186,9 +230,13 @@ class OrderRefund extends OrderRefundModel
     public static function getCountByUnderway(): int
     {
         $userId = UserService::getCurrentLoginUserId();
-        return (new static)->where('user_id', '=', $userId)
-            ->where('type', '=', RefundTypeEnum::SERVICE)
-            ->where('status', '=', 0)
+        return (new static)
+            ->alias('refund')
+            ->join('order', 'order.order_id = refund.order_id')
+            ->where('refund.user_id', '=', $userId)
+            ->where('refund.type', '=', RefundTypeEnum::SERVICE)
+            ->where('refund.status', '=', 0)
+            ->where('order.is_delete', '=', 0)
             ->count();
     }
 

@@ -31,6 +31,35 @@
    - `yoshop2.0-admin/`
 11. 上线前后按 `deploy/ops-support.md` 完成数据库备份、回滚演练、监控观察与 ACME 续期核验
 
+## 微信小程序虚拟支付
+
+如需验收或启用小程序虚拟支付，先在 `yoshop2.0/.env` 的 `[VIRTUAL_PAYMENT]` 段填写部署态配置：
+
+- `ENABLED = 1`
+- `ENV = 1`，首期验收固定使用沙箱
+- `OFFER_ID`、`SANDBOX_APP_KEY`、`MERCHANT_ID`
+- `NOTIFY_BASE_URL = https://wx.oiob.cn`
+- `MESSAGE_PUSH_TOKEN`
+- `MESSAGE_PUSH_ENCODING_AES_KEY`，仅微信后台消息推送使用安全模式时必填
+
+微信后台消息推送地址保持为：
+
+```text
+https://wx.oiob.cn/notice/virtualPayment.php
+```
+
+完成配置后先运行只读检查：
+
+```bash
+cd /opt/yoshop/yoshop2.0
+php think virtual-payment:sandbox-check \
+  --goods-id 10001 \
+  --user-mobile 19900000000 \
+  --evidence-dir "/opt/yoshop/runtime/virtual-payment-sandbox-check"
+```
+
+真实沙箱支付完成后，再带真实 `outTradeNo` 追加审计；没有真实微信沙箱证据前，不应把 OpenSpec 的 11.1、11.8、11.9 标记为完成。
+
 ## 说明
 
 - `yoshop2.0/public/uploads/` 已直接包含演示图片。

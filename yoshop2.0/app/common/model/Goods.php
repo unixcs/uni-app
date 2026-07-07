@@ -30,6 +30,9 @@ use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
  */
 class Goods extends BaseModel
 {
+    public const VP_ENV_PRODUCTION = 0;
+    public const VP_ENV_SANDBOX = 1;
+
     // 定义表名
     protected $name = 'goods';
 
@@ -324,5 +327,56 @@ class Goods extends BaseModel
     public static function detail(int $goodsId, array $with = [])
     {
         return static::get($goodsId, $with);
+    }
+
+    /**
+     * 是否启用虚拟支付
+     * @param array|self $goods
+     * @return bool
+     */
+    public static function isVirtualPaymentEnabled($goods): bool
+    {
+        return (int)($goods['vp_enabled'] ?? 0) === 1;
+    }
+
+    /**
+     * 获取商品当前价格（分）
+     * @param array|self $goods
+     * @return int
+     */
+    public static function getGoodsPriceFen($goods): int
+    {
+        return (int)round((float)($goods['goods_price_min'] ?? 0) * 100);
+    }
+
+    /**
+     * 判断商品是否为服务商品
+     * @param array|self $goods
+     * @return bool
+     */
+    public static function isServicePackageGoodsData($goods): bool
+    {
+        if (isset($goods['is_service_package'])) {
+            return (bool)$goods['is_service_package'];
+        }
+        $deliveryTypes = (array)($goods['delivery_type'] ?? []);
+        $serviceIds = (array)($goods['serviceIds'] ?? $goods['service_ids'] ?? []);
+        if (!empty($serviceIds) && \in_array(DeliveryTypeEnum::NOTHING, $deliveryTypes, true)) {
+            return true;
+        }
+        return (int)($goods['goods_type'] ?? 0) !== 10
+            && \in_array(DeliveryTypeEnum::NOTHING, $deliveryTypes, true);
+    }
+
+    /**
+     * 是否为虚拟支付服务商品
+     * @param array|self $goods
+     * @return bool
+     */
+    public static function isVirtualPaymentServiceGoods($goods): bool
+    {
+        return static::isVirtualPaymentEnabled($goods)
+            && !empty((string)($goods['vp_product_id'] ?? ''))
+            && static::isServicePackageGoodsData($goods);
     }
 }

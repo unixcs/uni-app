@@ -205,6 +205,9 @@ class Goods extends GoodsModel
             'newSpecList' => [],
             'newSkuList' => [],
             'store_id' => self::$storeId,
+            'vp_enabled' => isset($data['vp_enabled']) ? (int)$data['vp_enabled'] : 0,
+            'vp_product_id' => trim((string)($data['vp_product_id'] ?? '')),
+            'vp_price_snapshot' => isset($data['vp_price_snapshot']) ? (int)$data['vp_price_snapshot'] : 0,
         ]);
         // 整理商品的价格和库存总量
         if ($data['spec_type'] == GoodsSpecTypeEnum::MULTI) {
@@ -241,6 +244,41 @@ class Goods extends GoodsModel
             }
         }
         $data['alone_grade_equity'] = $aloneGradeEquity;
+        $this->validateVirtualPaymentData($data);
         return $data;
+    }
+
+    /**
+     * 校验虚拟支付配置
+     * @param array $data
+     * @return void
+     * @throws BaseException
+     */
+    private function validateVirtualPaymentData(array &$data): void
+    {
+        if ((int)$data['vp_enabled'] !== 1) {
+            $data['vp_product_id'] = '';
+            $data['vp_price_snapshot'] = 0;
+            return;
+        }
+        if ($data['spec_type'] != GoodsSpecTypeEnum::SINGLE) {
+            throwError('启用虚拟支付的商品仅支持单规格');
+        }
+        if (!GoodsModel::isServicePackageGoodsData($data)) {
+            throwError('仅服务商品可启用虚拟支付');
+        }
+        if ($data['vp_product_id'] === '') {
+            throwError('请填写虚拟支付 productId');
+        }
+        $goodsPriceFen = (int)round((float)$data['goods_price'] * 100);
+        if ($goodsPriceFen <= 0) {
+            throwError('虚拟支付商品价格必须大于0');
+        }
+        if ((int)$data['vp_price_snapshot'] <= 0) {
+            throwError('请填写平台价格快照');
+        }
+        if ($goodsPriceFen !== (int)$data['vp_price_snapshot']) {
+            throwError('商品售价必须与平台价格快照一致');
+        }
     }
 }

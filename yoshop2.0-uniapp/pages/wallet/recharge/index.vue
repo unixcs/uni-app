@@ -242,14 +242,16 @@
         if (app.disabled) return
         app.disabled = true
         // 提交到后端
-        RechargeApi.submit({
+        Promise.resolve(app.getExtraAsUnify(app.curPaymentItem.method))
+          .then(extra => RechargeApi.submit({
             planId: app.selectedPlanId,
             customMoney: app.inputValue ? app.inputValue : '',
             method: app.curPaymentItem.method,
             client: app.platform,
-            extra: app.getExtraAsUnify(app.curPaymentItem.method)
-          })
+            extra
+          }))
           .then(result => app.onSubmitCallback(result))
+          .catch(err => app.onPayFail(err))
           .finally(err => {
             setTimeout(() => app.disabled = false, 10)
           })

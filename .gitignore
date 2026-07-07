@@ -6,3 +6,10 @@
 .vscode/
 01.md
 Agent.md
+
+# Local tooling/workspace artifacts
+/.claude/
+/.codex/
+/.workbuddy/
+/runtime/
+/tmp/

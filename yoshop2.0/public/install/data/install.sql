@@ -6530,6 +6530,7 @@ CREATE TABLE `yoshop_user_oauth` (
   `user_id` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '用户ID',
   `oauth_type` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '第三方登陆类型(MP-WEIXIN)',
   `oauth_id` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '第三方用户唯一标识 (uid openid)',
+  `session_key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '微信小程序session_key',
   `unionid` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '微信unionID',
   `store_id` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '商城ID',
   `is_delete` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '是否删除',

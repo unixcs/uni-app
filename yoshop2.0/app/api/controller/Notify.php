@@ -59,4 +59,21 @@ class Notify extends BaseController
         $NotifyService = new NotifyService;
         return $NotifyService->alipay();
     }
+
+    /**
+     * 微信虚拟支付推送
+     * @return string
+     */
+    public function virtualPayment(): string
+    {
+        try {
+            $NotifyService = new NotifyService;
+            if (strtoupper((string)request()->method()) === 'GET') {
+                return $NotifyService->virtualPaymentVerify();
+            }
+            return $NotifyService->virtualPayment();
+        } catch (\Throwable $e) {
+            return '{"ErrCode":1,"ErrMsg":"FAIL"}';
+        }
+    }
 }

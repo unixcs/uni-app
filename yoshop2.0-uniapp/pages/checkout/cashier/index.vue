@@ -74,17 +74,87 @@
     [PayMethodEnum.ALIPAY.value]: '支付宝'
   }
 
-  // H5端支付下单时的数据
-  // 用于从第三方支付页返回到收银台页面后拿到下单数据
+  // 支付下单时的临时数据
+  // 用于从第三方支付页返回到收银台页面后拿到下单数据，或用于小程序支付回调丢失后的查单恢复
   const getTempUnifyData = orderKey => {
-    // if (window.performance && window.performance.navigation.type == 2) {
-    const tempUnifyData = storage.get('tempUnifyData_' + orderKey)
+    const key = 'tempUnifyData_' + orderKey
+    const tempUnifyData = storage.get(key)
     if (tempUnifyData) {
-      storage.remove('tempUnifyData_' + orderKey)
+      storage.remove(key)
       return tempUnifyData
     }
-    // }
     return null
+  }
+  const clearTempUnifyData = orderKey => storage.remove('tempUnifyData_' + orderKey)
+  const getVirtualPaymentLastFail = orderKey => storage.get('virtualPaymentLastFail_' + orderKey)
+  const clearVirtualPaymentLastFail = orderKey => storage.remove('virtualPaymentLastFail_' + orderKey)
+  const getErrorText = err => String((err && (err.message || err.errMsg)) || '').toLowerCase()
+  const shouldAppendVirtualPaymentFailHint = (payload, err, context = {}) => {
+    if (!payload) {
+      return false
+    }
+    if (context.outTradeNo && payload.outTradeNo && context.outTradeNo !== payload.outTradeNo) {
+      return false
+    }
+    if (context.phase === 'query') {
+      return !!(context.outTradeNo && payload.outTradeNo === context.outTradeNo)
+    }
+    if (context.method === PayMethodEnum.WECHAT.value && context.provider === 'virtual') {
+      return true
+    }
+    return getErrorText(err).includes('requestvirtualpayment')
+  }
+  const formatVirtualPaymentFailHint = payload => {
+    if (!payload) {
+      return ''
+    }
+    const parts = []
+    if (payload.errCode !== null && payload.errCode !== undefined && payload.errCode !== '') {
+      parts.push(`错误码:${payload.errCode}`)
+    }
+    if (payload.outTradeNo) {
+      parts.push(`交易号:${payload.outTradeNo}`)
+    }
+    if (payload.runtimeContext && payload.runtimeContext.envVersion) {
+      parts.push(`运行环境:${payload.runtimeContext.envVersion}`)
+    }
+    if (payload.runtimeContext && payload.runtimeContext.platform) {
+      parts.push(`宿主:${payload.runtimeContext.platform}`)
+    }
+    if (payload.runtimeContext && payload.runtimeContext.scene !== null && payload.runtimeContext.scene !== undefined && payload.runtimeContext.scene !== '') {
+      parts.push(`场景:${payload.runtimeContext.scene}`)
+    }
+    if (payload.runtimeContext && payload.runtimeContext.wechatVersion) {
+      parts.push(`微信:${payload.runtimeContext.wechatVersion}`)
+    }
+    if (payload.runtimeContext && payload.runtimeContext.sdkVersion) {
+      parts.push(`SDK:${payload.runtimeContext.sdkVersion}`)
+    }
+    return parts.length ? `（${parts.join('，')}）` : ''
+  }
+  const formatTradeQueryContextHint = outTradeNo => outTradeNo ? `（本次查单交易号:${outTradeNo}）` : ''
+  const isVirtualPaymentUserCancel = err => {
+    const errCode = Number(err && err.errCode)
+    const rawText = String((err && (err.rawMessage || err.errMsg)) || '').toLowerCase()
+    return !!(err && err.isUserCancel)
+      || errCode === -2
+      || rawText.includes('requestvirtualpayment:fail cancel')
+      || rawText.includes('requestpayment:fail cancel')
+  }
+  const shouldAutoQueryVirtualPaymentFailure = (payload, context = {}, err = null) => {
+    if (!payload || !payload.outTradeNo) {
+      return false
+    }
+    if (context.phase !== 'payment') {
+      return false
+    }
+    if (context.method !== PayMethodEnum.WECHAT.value || context.provider !== 'virtual') {
+      return false
+    }
+    if ((err && err.shouldSkipAutoQuery) || isVirtualPaymentUserCancel(err)) {
+      return false
+    }
+    return true
   }
 
   export default {
@@ -113,6 +183,8 @@
         methods: [],
         // 支付确认弹窗
         showConfirmModal: false,
+        // 是否正在查单，避免重复触发
+        isTradeQuerying: false,
         // #ifdef H5
         // 当前第三方支付信息 (临时数据, 仅用于H5端)
         tempUnifyData: { outTradeNo: '', method: '' },
@@ -162,10 +234,7 @@
             app.isLoading = false
             app.setDefaultPayType()
             app.checkOrderPayStatus()
-            // #ifdef H5
-            // 判断当前页面来源于浏览器返回
             this.performance()
-            // #endif
           })
       },
 
@@ -184,6 +253,7 @@
       checkOrderPayStatus() {
         const app = this
         if (app.order.pay_status == PayStatusEnum.SUCCESS.value) {
+          clearTempUnifyData(app.orderId)
           app.$toast('恭喜您，订单已付款成功')
           app.onSuccessNav()
         }
@@ -194,20 +264,22 @@
         this.curPaymentItem = this.methods[index]
       },
 
-      // 判断当前页面来源于浏览器返回并提示手动查单
-      // #ifdef H5
+      // 尝试恢复上一次支付中的查单状态
       performance() {
         const app = this
-        // 判断订单状态, 异步回调会将订单状态变为已支付, 那么就不需要让用户手动查单了
         if (app.order.pay_status == PayStatusEnum.PENDING.value) {
           const performanceData = getTempUnifyData(app.orderId)
           if (performanceData) {
+            // #ifdef H5
             app.tempUnifyData = performanceData
             app.showConfirmModal = true
+            // #endif
+            // #ifndef H5
+            app.onTradeQuery(performanceData.outTradeNo, performanceData.method)
+            // #endif
           }
         }
       },
-      // #endif
 
       // 确认支付
       handleSubmit() {
@@ -220,13 +292,17 @@
         // 按钮禁用
         if (app.disabled) return
         app.disabled = true
+        clearTempUnifyData(app.orderId)
+        clearVirtualPaymentLastFail(app.orderId)
         // 提交到后端API
-        CashierApi.orderPay(app.orderId, {
+        Promise.resolve(app.getExtraAsUnify(app.curPaymentItem.method))
+          .then(extra => CashierApi.orderPay(app.orderId, {
             method: app.curPaymentItem.method,
             client: app.platform,
-            extra: app.getExtraAsUnify(app.curPaymentItem.method)
-          })
+            extra
+          }))
           .then(result => app.onSubmitCallback(result))
+          .catch(err => app.onPayFail(err))
           .finally(err => setTimeout(() => app.disabled = false, 10))
       },
 
@@ -246,6 +322,7 @@
         const app = this
         const method = app.curPaymentItem.method
         const paymentData = result.data.payment
+        const isVirtualWechat = method === PayMethodEnum.WECHAT.value && paymentData.provider === 'virtual'
         // 余额支付
         if (method === PayMethodEnum.BALANCE.value) {
           app.onShowSuccess(result)
@@ -255,14 +332,22 @@
           console.log('paymentData', paymentData)
           Alipay.payment({ orderKey: app.orderId, ...paymentData })
             .then(res => app.onPaySuccess(res))
-            .catch(err => app.onPayFail(err))
+            .catch(err => app.onPayFail(err, { phase: 'payment', method, provider: paymentData.provider || '' }))
         }
         // 发起微信支付
         if (method === PayMethodEnum.WECHAT.value) {
           console.log('paymentData', paymentData)
           Wechat.payment({ orderKey: app.orderId, ...paymentData })
             .then(res => app.onPaySuccess(res))
-            .catch(err => app.onPayFail(err))
+            .catch(err => app.onPayFail(err, {
+              phase: 'payment',
+              method,
+              provider: paymentData.provider || '',
+              outTradeNo: paymentData.outTradeNo || paymentData.out_trade_no || ''
+            }))
+          if (isVirtualWechat) {
+            return
+          }
         }
       },
 
@@ -276,30 +361,115 @@
           app.onTradeQuery(outTradeNo, method)
           return true
         }
+        app.getCashierInfo()
+        setTimeout(() => app.getCashierInfo(), 1200)
         this.onShowSuccess(res)
       },
 
       // 显示支付成功信息并页面跳转
       onShowSuccess({ message }) {
+        clearTempUnifyData(this.orderId)
+        clearVirtualPaymentLastFail(this.orderId)
         this.$toast(message || '订单支付成功')
         this.onSuccessNav()
       },
 
       // 订单支付失败
-      onPayFail(err) {
+      onPayFail(err, context = {}) {
+        const app = this
         console.log('onPayFail', err)
-        const errMsg = err.message || '订单未支付'
-        this.$error(errMsg)
+        const lastVirtualFail = getVirtualPaymentLastFail(app.orderId)
+        if (lastVirtualFail) {
+          console.log('virtualPaymentLastFail', lastVirtualFail)
+        }
+        if (isVirtualPaymentUserCancel(err)) {
+          clearTempUnifyData(app.orderId)
+          clearVirtualPaymentLastFail(app.orderId)
+          app.$toast('已取消支付')
+          setTimeout(() => app.getCashierInfo(), 80)
+          return
+        }
+        if (shouldAutoQueryVirtualPaymentFailure(lastVirtualFail, context, err) && !app.isTradeQuerying) {
+          app.resolveVirtualPaymentFailure(err, context, lastVirtualFail)
+          return
+        }
+        const hint = shouldAppendVirtualPaymentFailHint(lastVirtualFail, err, context)
+          ? formatVirtualPaymentFailHint(lastVirtualFail)
+          : ''
+        const errMsg = (err.message || err.errMsg || '订单未支付') + hint
+        app.$error(errMsg)
+      },
+
+      resolveVirtualPaymentFailure(err, context, lastVirtualFail) {
+        const app = this
+        const outTradeNo = context.outTradeNo || (lastVirtualFail && lastVirtualFail.outTradeNo) || ''
+        if (!outTradeNo) {
+          app.onPayFail(err, { ...context, phase: 'payment-fallback' })
+          return
+        }
+        app.isTradeQuerying = true
+        CashierApi.tradeQuery({ outTradeNo, method: PayMethodEnum.WECHAT.value, client: app.platform })
+          .then(result => {
+            if (result.data.isPay) {
+              app.onShowSuccess(result)
+              return
+            }
+            if (result.data && result.data.isPending) {
+              app.$toast(result.message || '支付结果确认中，请稍后再试')
+              app.getCashierInfo()
+              setTimeout(() => app.getCashierInfo(), 1200)
+              return
+            }
+            const latestFail = getVirtualPaymentLastFail(app.orderId) || lastVirtualFail
+            const hint = shouldAppendVirtualPaymentFailHint(latestFail, result, {
+              phase: 'query',
+              method: PayMethodEnum.WECHAT.value,
+              outTradeNo
+            }) ? formatVirtualPaymentFailHint(latestFail) : ''
+            app.$error((result.message || err.message || err.errMsg || '订单未支付') + formatTradeQueryContextHint(outTradeNo) + hint)
+          })
+          .catch(queryErr => {
+            const latestFail = getVirtualPaymentLastFail(app.orderId) || lastVirtualFail
+            const hint = shouldAppendVirtualPaymentFailHint(latestFail, queryErr, {
+              phase: 'query',
+              method: PayMethodEnum.WECHAT.value,
+              outTradeNo
+            }) ? formatVirtualPaymentFailHint(latestFail) : ''
+            app.$error((queryErr.message || queryErr.errMsg || err.message || err.errMsg || '订单未支付') + formatTradeQueryContextHint(outTradeNo) + hint)
+          })
+          .finally(() => {
+            app.isTradeQuerying = false
+          })
       },
 
       // 已完成支付按钮事件: 请求后端查单
       onTradeQuery(outTradeNo, method) {
         const app = this
+        if (app.isTradeQuerying) {
+          return
+        }
+        app.isTradeQuerying = true
         // 交易查询
         // 查询第三方支付订单是否付款成功
         CashierApi.tradeQuery({ outTradeNo, method, client: app.platform })
-          .then(result => result.data.isPay ? app.onShowSuccess(result) : app.onPayFail(result))
-          .finally(() => app.showConfirmModal = false)
+          .then(result => {
+            if (result.data.isPay) {
+              app.onShowSuccess(result)
+              return
+            }
+            app.onPayFail({
+              ...result,
+              message: (result.message || result.errMsg || '订单未支付') + formatTradeQueryContextHint(outTradeNo)
+            }, { phase: 'query', method, outTradeNo })
+          })
+          .catch(err => app.onPayFail({
+            ...err,
+            message: (err.message || err.errMsg || '订单未支付') + formatTradeQueryContextHint(outTradeNo)
+          }, { phase: 'query', method, outTradeNo }))
+          .finally(() => {
+            app.isTradeQuerying = false
+            app.showConfirmModal = false
+          })
       },
 
       // 支付成功后的跳转

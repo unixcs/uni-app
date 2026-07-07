@@ -9,3 +9,7 @@
 /public/uploads/.gitignore
 *.Zone.Identifier
 *:Zone.Identifier
+
+# User-generated uploads
+/public/uploads/*
+!/public/uploads/.gitignore

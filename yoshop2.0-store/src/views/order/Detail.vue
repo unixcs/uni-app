@@ -79,6 +79,22 @@
         </a-descriptions>
       </a-card>
 
+      <a-card v-if="virtualPaymentSummary.enabled" class="mt-20" :bordered="false">
+        <a-descriptions title="虚拟支付信息" :column="3">
+          <a-descriptions-item label="支付通道">微信虚拟支付</a-descriptions-item>
+          <a-descriptions-item label="支付环境">{{ virtualPaymentEnvText }}</a-descriptions-item>
+          <a-descriptions-item label="支付状态">{{ virtualPaymentTradeStateText }}</a-descriptions-item>
+          <a-descriptions-item label="交易号">{{ record.trade ? (record.trade.out_trade_no || '-') : '-' }}</a-descriptions-item>
+          <a-descriptions-item label="支付流水号">{{ record.trade ? (record.trade.trade_no || '-') : '-' }}</a-descriptions-item>
+          <a-descriptions-item label="productId">{{ virtualPaymentSummary.product_id || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="平台价格">￥{{ virtualPaymentGoodsPriceText }}</a-descriptions-item>
+          <a-descriptions-item label="履约回执">{{ virtualPaymentProvideGoodsText }}</a-descriptions-item>
+          <a-descriptions-item label="退款状态">{{ virtualPaymentRefundText }}</a-descriptions-item>
+          <a-descriptions-item label="通知次数">{{ virtualPaymentSummary.notify_times || 0 }}</a-descriptions-item>
+          <a-descriptions-item label="最近通知时间">{{ virtualPaymentLastNotifyText }}</a-descriptions-item>
+        </a-descriptions>
+      </a-card>
+
       <a-card class="mt-20" :bordered="false">
         <div class="ant-descriptions-title">服务套餐</div>
         <div class="goods-list">
@@ -242,12 +258,63 @@ export default {
     },
     latestRefund () {
       const goodsList = this.record.goods || []
+      const refunds = []
       for (const goods of goodsList) {
         if (goods && goods.refund) {
-          return goods.refund
+          refunds.push(goods.refund)
         }
       }
-      return null
+      if (!refunds.length) {
+        return null
+      }
+      if (this.activeRefundId > 0) {
+        const activeRefund = refunds.find(item => Number(item.order_refund_id || 0) === this.activeRefundId)
+        if (activeRefund) {
+          return activeRefund
+        }
+      }
+      return refunds.sort((a, b) => {
+        const idDiff = Number(b.order_refund_id || 0) - Number(a.order_refund_id || 0)
+        if (idDiff !== 0) {
+          return idDiff
+        }
+        return Number(b.create_time || 0) - Number(a.create_time || 0)
+      })[0]
+    },
+    virtualPaymentSummary () {
+      return this.record.virtual_payment_summary || {}
+    },
+    virtualPaymentEnvText () {
+      if (!this.virtualPaymentSummary.enabled) return '--'
+      return Number(this.virtualPaymentSummary.env) === 1 ? '沙箱' : '现网'
+    },
+    virtualPaymentGoodsPriceText () {
+      if (!this.virtualPaymentSummary.enabled) return '--'
+      return (Number(this.virtualPaymentSummary.goods_price || 0) / 100).toFixed(2)
+    },
+    virtualPaymentLastNotifyText () {
+      const value = Number(this.virtualPaymentSummary.last_notify_time || 0)
+      if (!value) return '--'
+      return this.$moment.unix(value).format('YYYY-MM-DD HH:mm:ss')
+    },
+    virtualPaymentProvideGoodsText () {
+      const status = this.virtualPaymentSummary.provide_goods_status || ''
+      if (!status) return '--'
+      if (status === 'success') return '已回执'
+      if (status === 'sending') return '发送中'
+      if (status === 'failed') return '失败待补偿'
+      if (status === 'skipped') return '已跳过'
+      return status
+    },
+    virtualPaymentRefundText () {
+      return this.virtualPaymentSummary.refund_status || '--'
+    },
+    virtualPaymentTradeStateText () {
+      const state = Number(this.virtualPaymentSummary.trade_state || 0)
+      if (state === 20) return '已支付'
+      if (state === 30) return '退款中/已退款'
+      if (state === 40) return '已关闭'
+      return '待支付'
     }
   },
   created () {

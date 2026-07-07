@@ -42,6 +42,7 @@ use app\common\service\{
     delivery\Express as ExpressService,
     goods\source\Factory as StockFactory
 };
+use app\common\model\Goods as CommonGoodsModel;
 use app\common\library\helper;
 use cores\exception\BaseException;
 
@@ -250,6 +251,8 @@ class Checkout extends BaseService
         $orderTotalNum = (int)helper::getArrayColumnSum($this->goodsList, 'total_num');
         // 设置订单商品会员折扣价
         $this->setOrderGoodsGradeMoney();
+        // 虚拟支付商品不允许走复杂改价链路
+        $this->applyVirtualPaymentConstraints();
         // 设置订单商品总金额(不含优惠折扣)
         $this->setOrderTotalPrice();
         // 当前用户可用的优惠券列表
@@ -264,6 +267,8 @@ class Checkout extends BaseService
         $this->isServicePackage ? $this->setServiceDelivery() : $this->setDelivery();
         // 计算订单最终金额
         $this->setOrderPayPrice();
+        // 虚拟支付商品要求最终金额与价格快照完全一致
+        $this->verifyVirtualPaymentPayPrice();
         // 计算订单积分赠送数量
         $this->setOrderPointsBonus();
         // 返回订单数据
@@ -670,6 +675,77 @@ class Checkout extends BaseService
                 'total_price' => $gradeTotalPrice,
             ], false);
         }
+    }
+
+    /**
+     * 虚拟支付商品约束
+     * @return void
+     * @throws BaseException
+     */
+    private function applyVirtualPaymentConstraints(): void
+    {
+        if (!$this->hasVirtualPaymentGoods()) {
+            return;
+        }
+        if (\count($this->goodsList) !== 1) {
+            throwError('虚拟支付商品仅支持单商品立即购买');
+        }
+        if ((int)($this->param['couponId'] ?? 0) > 0) {
+            throwError('虚拟支付商品暂不支持优惠券');
+        }
+        if ((int)($this->param['isUsePoints'] ?? 0) === 1) {
+            throwError('虚拟支付商品暂不支持积分抵扣');
+        }
+        $this->checkoutRule['isCoupon'] = false;
+        $this->checkoutRule['isUsePoints'] = false;
+        $this->checkoutRule['isUserGrade'] = false;
+        foreach ($this->goodsList as &$goods) {
+            if (!CommonGoodsModel::isVirtualPaymentServiceGoods($goods)) {
+                continue;
+            }
+            $goods['is_user_grade'] = false;
+            $goods['grade_ratio'] = 0;
+            $goods['grade_goods_price'] = 0;
+            $goods['grade_total_money'] = 0;
+            $goods['coupon_money'] = 0;
+            $goods['points_money'] = 0;
+            $goods['points_num'] = 0;
+            $goods['total_price'] = helper::number2($goods['skuInfo']['goods_price'] * $goods['total_num']);
+        }
+    }
+
+    /**
+     * 校验虚拟支付商品最终应付金额
+     * @return void
+     * @throws BaseException
+     */
+    private function verifyVirtualPaymentPayPrice(): void
+    {
+        if (!$this->hasVirtualPaymentGoods()) {
+            return;
+        }
+        $goods = $this->goodsList[0] ?? null;
+        if (!$goods || !CommonGoodsModel::isVirtualPaymentServiceGoods($goods)) {
+            return;
+        }
+        $snapshotPrice = helper::number2(((int)$goods['vp_price_snapshot']) / 100);
+        if (!helper::bcequal($snapshotPrice, $this->orderData['orderPayPrice'])) {
+            throwError('虚拟支付商品金额校验失败，请检查商品售价与平台价格快照');
+        }
+    }
+
+    /**
+     * 是否包含虚拟支付商品
+     * @return bool
+     */
+    private function hasVirtualPaymentGoods(): bool
+    {
+        foreach ((array)$this->goodsList as $goods) {
+            if (CommonGoodsModel::isVirtualPaymentServiceGoods($goods)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

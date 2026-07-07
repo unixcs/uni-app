@@ -31,6 +31,8 @@ bootstrap and does not deploy the full application code or frontend bundles.
 
 6. **Fix permissions**
    - Ensure `/opt/yoshop/yoshop2.0/public`, `/public/admin`, and `/public/store` exist.
+   - Ensure `/opt/yoshop/yoshop2.0/public/uploads` and `/opt/yoshop/yoshop2.0/runtime` are writable by the PHP-FPM user.
+   - Recommended owner/group: `www-data:www-data`.
    - Keep the web user able to read the site tree.
    - Recheck ownership after any future code upload.
 

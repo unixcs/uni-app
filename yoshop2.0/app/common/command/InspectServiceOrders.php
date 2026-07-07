@@ -8,6 +8,7 @@ namespace app\common\command;
 
 use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
+use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\model\Order;
 use app\common\model\OrderRefund;
 use think\console\Command;
@@ -46,7 +47,7 @@ class InspectServiceOrders extends Command
             $hasContact = !empty($serviceContact['contact_name']) || !empty($serviceContact['contact_mobile']) || !empty($serviceContact['time_preference']);
             $isDeliveryService = $deliveryType === DeliveryTypeEnum::NOTHING;
             $hasActiveRefund = (new OrderRefund)
-                ->where('type', '=', 10)
+                ->where('type', '=', RefundTypeEnum::SERVICE)
                 ->where('order_id', '=', (int)$order['order_id'])
                 ->where('status', '=', RefundStatusEnum::NORMAL)
                 ->count() > 0;

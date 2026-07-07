@@ -77,6 +77,9 @@ class Cashier extends Controller
         $CashierService = new CashierService;
         $result = $CashierService->setMethod($method)->setClient($client)->tradeQuery($outTradeNo);
         $message = $result ? '恭喜您，订单已付款成功' : ($CashierService->getError() ?: '很抱歉，订单未支付，请重新发起');
-        return $this->renderSuccess(['isPay' => $result], $message);
+        return $this->renderSuccess([
+            'isPay' => $result,
+            'isPending' => $CashierService->isPendingTradeQuery(),
+        ], $message);
     }
 }

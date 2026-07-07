@@ -15,16 +15,21 @@ namespace app\api\service;
 use app\api\model\Payment as PaymentModel;
 use app\api\model\PaymentTrade as PaymentTradeModel;
 use app\api\model\PaymentTemplate as PaymentTemplateModel;
+use app\api\model\wxapp\Setting as WxappSettingModel;
 use app\api\service\order\PaySuccess as OrderPaySuccessService;
 use app\api\service\recharge\PaySuccess as RechargePaySuccessService;
+use app\common\service\order\Refund as OrderRefundService;
 use app\common\enum\OrderType as OrderTypeEnum;
+use app\common\enum\Setting as SettingEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
 use app\common\library\Log;
 use app\common\library\helper;
 use app\common\library\payment\gateway\Driver;
 use app\common\library\payment\Facade as PaymentFacade;
 use app\common\library\payment\gateway\driver\wechat\V3 as WechatPaymentV3;
+use app\common\model\store\Setting as StoreSettingModel;
 use cores\exception\BaseException;
+use EasyWeChat\Kernel\Encryptor as WechatEncryptor;
 
 /**
  * 服务类：第三方支付异步通知
@@ -33,8 +38,31 @@ use cores\exception\BaseException;
  */
 class Notify
 {
+    private const VIRTUAL_EVENT_PAY = 'xpay_goods_deliver_notify';
+    private const VIRTUAL_EVENT_REFUND = 'xpay_refund_notify';
+    private const VIRTUAL_PLATFORM = 'wechat_virtual';
+
     // 异步通知的请求参数 (由第三方支付发送)
     private array $notifyParams;
+
+    /**
+     * 微信消息推送 URL 验证
+     * @return string
+     */
+    public function virtualPaymentVerify(): string
+    {
+        $config = $this->getVirtualMessagePushConfig();
+        $token = trim((string)($config['message_push_token'] ?? ''));
+        $signature = (string)request()->param('signature', '');
+        $timestamp = (string)request()->param('timestamp', '');
+        $nonce = (string)request()->param('nonce', '');
+        $echoStr = (string)request()->param('echostr', '');
+        if ($token === '' || $signature === '' || $timestamp === '' || $nonce === '' || $echoStr === '') {
+            throwError('虚拟支付消息推送 URL 验证参数不完整');
+        }
+        $this->assertPlaintextSignature($token, $signature, $timestamp, $nonce);
+        return $echoStr;
+    }
 
     /**
      * 支付成功异步通知 (微信支付V2)
@@ -161,11 +189,35 @@ class Notify
     }
 
     /**
+     * 微信虚拟支付推送
+     * @return string
+     */
+    public function virtualPayment(): string
+    {
+        $responseFormat = 'json';
+        try {
+            [$notifyParams, $responseFormat] = $this->getVirtualNotifyParams();
+            $event = (string)($notifyParams['Event'] ?? '');
+            if ($event === self::VIRTUAL_EVENT_PAY) {
+                $this->handleVirtualPayNotify($notifyParams);
+            } elseif ($event === self::VIRTUAL_EVENT_REFUND) {
+                $this->handleVirtualRefundNotify($notifyParams);
+            } else {
+                throwError('未知的虚拟支付推送事件: ' . $event);
+            }
+            return $this->buildVirtualNotifyResponse(0, 'success', $responseFormat);
+        } catch (\Throwable $e) {
+            Log::append('Notify-virtualPayment', ['errMessage' => $e->getMessage()]);
+            return $this->buildVirtualNotifyResponse(1, $e->getMessage(), $responseFormat);
+        }
+    }
+
+    /**
      * 订单支付成功事件
      * @param PaymentTradeModel $tradeInfo
      * @param array $paymentData 第三方支付异步回调的
      */
-    private function orderPaySuccess(PaymentTradeModel $tradeInfo, array $paymentData)
+    private function orderPaySuccess(PaymentTradeModel $tradeInfo, array $paymentData): void
     {
         // 记录日志
         Log::append('Notify-orderPaySuccess', [
@@ -195,7 +247,247 @@ class Notify
         } catch (\Throwable $e) {
             // 记录错误日志
             Log::append('Notify-orderPaySuccess', ['errMessage' => $e->getMessage()]);
+            throw $e;
         }
+    }
+
+    /**
+     * 获取虚拟支付推送参数
+     * @return array{0:array,1:string}
+     */
+    private function getVirtualNotifyParams(): array
+    {
+        $request = request();
+        $rawBody = (string)\file_get_contents('php://input');
+        $contentType = strtolower((string)$request->header('content-type'));
+        $responseFormat = str_contains($contentType, 'xml') ? 'xml' : 'json';
+        $data = $this->decodeVirtualNotifyBody($rawBody, $contentType);
+        if (!is_array($data)) {
+            throwError('虚拟支付推送报文异常');
+        }
+        $data = $this->decryptVirtualNotifyPayloadIfNeeded($data, $rawBody);
+        $this->verifyVirtualNotifySource($data);
+        if (empty($data['Event'])) {
+            throwError('虚拟支付推送报文异常');
+        }
+        return [$data, $responseFormat];
+    }
+
+    /**
+     * 处理虚拟支付成功推送
+     * @param array $notifyParams
+     * @return void
+     */
+    private function handleVirtualPayNotify(array $notifyParams): void
+    {
+        $outTradeNo = (string)($notifyParams['OutTradeNo'] ?? '');
+        if ($outTradeNo === '') {
+            throwError('虚拟支付成功推送缺少 OutTradeNo');
+        }
+        $tradeInfo = PaymentTradeModel::detailByOutTradeNo($outTradeNo);
+        if ((string)$tradeInfo['platform'] !== self::VIRTUAL_PLATFORM) {
+            throwError('支付单平台不匹配');
+        }
+        $this->assertVirtualNotifyEnv($tradeInfo, $notifyParams);
+        PaymentTradeModel::recordNotify(
+            (int)$tradeInfo['trade_id'],
+            'pay_notify',
+            (string)($notifyParams['Event'] ?? ''),
+            $notifyParams
+        );
+        $wechatPayInfo = (array)($notifyParams['WeChatPayInfo'] ?? []);
+        $paymentData = [
+            'tradeNo' => (string)($wechatPayInfo['TransactionId'] ?? $notifyParams['TransactionId'] ?? $outTradeNo),
+            'outTradeNo' => $outTradeNo,
+            'orderStatus' => 2,
+            'raw' => $notifyParams,
+        ];
+        $this->orderPaySuccess($tradeInfo, $paymentData);
+    }
+
+    /**
+     * 处理虚拟支付退款推送
+     * @param array $notifyParams
+     * @return void
+     */
+    private function handleVirtualRefundNotify(array $notifyParams): void
+    {
+        $outTradeNo = (string)($notifyParams['MchOrderId'] ?? '');
+        if ($outTradeNo === '') {
+            throwError('虚拟支付退款推送缺少 MchOrderId');
+        }
+        $tradeInfo = PaymentTradeModel::detailByOutTradeNo($outTradeNo);
+        if ((string)$tradeInfo['platform'] !== self::VIRTUAL_PLATFORM) {
+            throwError('退款单平台不匹配');
+        }
+        $this->assertVirtualNotifyEnv($tradeInfo, $notifyParams);
+        PaymentTradeModel::recordNotify(
+            (int)$tradeInfo['trade_id'],
+            'refund_notify',
+            (string)($notifyParams['Event'] ?? ''),
+            $notifyParams
+        );
+        if ((int)($notifyParams['RetCode'] ?? -1) !== 0) {
+            return;
+        }
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)$tradeInfo['payload_snapshot']);
+        $orderRefundId = (int)($snapshot['virtual_refund']['order_refund_id'] ?? 0);
+        if ($orderRefundId <= 0) {
+            if (!empty($snapshot['virtual_refund']['duplicate_payment'])) {
+                PaymentTradeModel::mergePayloadSnapshot((int)$tradeInfo['trade_id'], [
+                    'virtual_refund' => [
+                        'status' => 'completed',
+                        'completed_at' => time(),
+                        'notify_payload' => $notifyParams,
+                    ],
+                ]);
+                PaymentTradeModel::updateToRefund((int)$tradeInfo['trade_id']);
+                return;
+            }
+            throwError('虚拟支付退款推送缺少本地退款单关联');
+        }
+        $refundService = new OrderRefundService();
+        $result = $refundService->syncVirtualRefund($orderRefundId);
+        if ((string)($result['status'] ?? '') !== 'completed') {
+            $status = (string)($result['status'] ?? 'unknown');
+            throwError('虚拟支付退款通知待重试: ' . $status);
+        }
+    }
+
+    /**
+     * 解析虚拟支付推送报文
+     * @param string $rawBody
+     * @param string $contentType
+     * @return array
+     */
+    private function decodeVirtualNotifyBody(string $rawBody, string $contentType): array
+    {
+        if ($rawBody === '') {
+            return [];
+        }
+        if (str_contains($contentType, 'json')) {
+            return (array)(helper::jsonDecode($rawBody) ?: []);
+        }
+        if (str_contains($contentType, 'xml') || str_starts_with(ltrim($rawBody), '<')) {
+            return (array)(helper::xmlToArray($rawBody) ?: []);
+        }
+        $json = helper::jsonDecode($rawBody);
+        if (is_array($json)) {
+            return $json;
+        }
+        return (array)(helper::xmlToArray($rawBody) ?: []);
+    }
+
+    /**
+     * 安全模式下解密微信消息推送体
+     * @param array $payload
+     * @param string $rawBody
+     * @return array
+     */
+    private function decryptVirtualNotifyPayloadIfNeeded(array $payload, string $rawBody): array
+    {
+        if (empty($payload['Encrypt'])) {
+            return $payload;
+        }
+        $config = $this->getVirtualMessagePushConfig();
+        $appId = (string)(WxappSettingModel::getConfigBasic()['app_id'] ?? '');
+        $token = trim((string)($config['message_push_token'] ?? ''));
+        $aesKey = trim((string)($config['message_push_encoding_aes_key'] ?? ''));
+        $msgSignature = (string)request()->param('msg_signature', '');
+        $nonce = (string)request()->param('nonce', '');
+        $timestamp = (string)request()->param('timestamp', '');
+        if ($appId === '' || $token === '' || $aesKey === '' || $msgSignature === '' || $nonce === '' || $timestamp === '') {
+            throwError('虚拟支付安全模式推送配置不完整');
+        }
+        $encryptor = new WechatEncryptor($appId, $token, $aesKey);
+        $plain = $encryptor->decrypt((string)$payload['Encrypt'], $msgSignature, $nonce, $timestamp);
+        $decrypted = $this->decodeVirtualNotifyBody($plain, str_starts_with(ltrim($plain), '<') ? 'xml' : 'json');
+        if (empty($decrypted)) {
+            throwError('虚拟支付安全模式推送解密失败');
+        }
+        return $decrypted;
+    }
+
+    /**
+     * 验证虚拟支付消息推送来源
+     * @param array $payload
+     * @return void
+     */
+    private function verifyVirtualNotifySource(array $payload): void
+    {
+        $config = $this->getVirtualMessagePushConfig();
+        $token = trim((string)($config['message_push_token'] ?? ''));
+        $signature = (string)request()->param('signature', '');
+        $timestamp = (string)request()->param('timestamp', '');
+        $nonce = (string)request()->param('nonce', '');
+        if (!empty($payload['Encrypt'])) {
+            if ($token === '' || (string)request()->param('msg_signature', '') === '' || $timestamp === '' || $nonce === '') {
+                throwError('虚拟支付安全模式推送缺少签名参数');
+            }
+            return;
+        }
+        if ($token === '' || $signature === '' || $timestamp === '' || $nonce === '') {
+            throwError('虚拟支付明文推送签名参数不完整');
+        }
+        $this->assertPlaintextSignature($token, $signature, $timestamp, $nonce);
+    }
+
+    /**
+     * 获取虚拟支付消息推送配置
+     * @return array
+     */
+    private function getVirtualMessagePushConfig(): array
+    {
+        return StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT);
+    }
+
+    /**
+     * 校验明文模式签名
+     * @param string $token
+     * @param string $signature
+     * @param string $timestamp
+     * @param string $nonce
+     * @return void
+     */
+    private function assertPlaintextSignature(string $token, string $signature, string $timestamp, string $nonce): void
+    {
+        $parts = [$token, $timestamp, $nonce];
+        sort($parts, SORT_STRING);
+        if (sha1(implode($parts)) !== $signature) {
+            throwError('虚拟支付消息推送签名校验失败');
+        }
+    }
+
+    /**
+     * 校验通知环境与本地交易环境一致
+     * @param PaymentTradeModel $tradeInfo
+     * @param array $notifyParams
+     * @return void
+     */
+    private function assertVirtualNotifyEnv(PaymentTradeModel $tradeInfo, array $notifyParams): void
+    {
+        if (!isset($notifyParams['Env'])) {
+            return;
+        }
+        if ((int)$notifyParams['Env'] !== (int)$tradeInfo['env']) {
+            throwError('虚拟支付推送环境不匹配');
+        }
+    }
+
+    /**
+     * 构建虚拟支付推送回包
+     * @param int $errCode
+     * @param string $errMsg
+     * @param string $format
+     * @return string
+     */
+    private function buildVirtualNotifyResponse(int $errCode, string $errMsg, string $format): string
+    {
+        $payload = ['ErrCode' => $errCode, 'ErrMsg' => $errMsg];
+        if ($format === 'xml') {
+            return response($payload, 200, [], 'xml')->getContent();
+        }
+        return helper::jsonEncode($payload);
     }
 
     /**

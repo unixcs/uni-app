@@ -28,6 +28,8 @@
             <view class="btn-group clearfix">
               <block v-if="item.action_flags && item.action_flags.can_cancel">
                 <view class="btn-item" @click="onCancel(item.order_id)">取消</view>
+              </block>
+              <block v-if="item.action_flags && item.action_flags.can_pay">
                 <view class="btn-item active" @click="onPay(item.order_id)">去支付</view>
               </block>
             </view>
@@ -76,12 +78,21 @@
     onShow() { this.canReset && this.onRefreshList(); this.canReset = false },
     onUnload() { uni.$off('syncRefresh') },
     methods: {
+      hasPrimaryRefundState(item) {
+        const info = (item && item.refund_info) || {}
+        return !!info.order_refund_id && Number(info.state) === 0 && !info.is_terminal
+      },
       initCurTab() { const index = this.tabs.findIndex(item => item.value == this.options.dataType); this.curTab = index > -1 ? index : 0 },
       upCallback(page) { this.getOrderList(page.num).then(list => { this.mescroll.endBySize(list.data.length, list.total) }).catch(() => this.mescroll.endErr()) },
       getOrderList(pageNo = 1) { return new Promise(resolve => { OrderApi.list({ dataType: this.getTabValue(), orderSource: this.options.orderSource, page: pageNo }, { load: false }).then(result => { const newList = this.initList(result.data.list); this.list.data = getMoreListData(newList, this.list, pageNo); resolve(newList) }) }) },
       initList(newList) { newList.data.forEach(item => { item.total_num = 0; item.goods.forEach(goods => { item.total_num += goods.total_num }) }); return newList },
       getTabValue() { return this.tabs[this.curTab].value },
-      getOrderStateText(item) { return (item.refund_info && item.refund_info.service_state_text) || item.service_state_text || '--' },
+      getOrderStateText(item) {
+        if (this.hasPrimaryRefundState(item)) {
+          return (item.refund_info && item.refund_info.service_state_text) || item.service_state_text || '--'
+        }
+        return item.service_state_text || (item.refund_info && item.refund_info.service_state_text) || '--'
+      },
       onChangeTab(index) { this.curTab = index; this.onRefreshList() },
       onRefreshList() { this.list = getEmptyPaginateObj(); setTimeout(() => { this.mescroll.resetUpScroll() }, 120) },
       onCancel(orderId) { uni.showModal({ title: '友情提示', content: '确认要取消该订单吗？', success: o => { if (o.confirm) OrderApi.cancel(orderId).then(result => { this.$toast(result.message); this.onRefreshList() }) } }) },

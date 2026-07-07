@@ -25,6 +25,7 @@ npm run dev:all
 - 微信开发者工具：
   `D:\Program\0\home\0\yoshop1\yoshop2.0-uniapp\unpackage\dist\dev\mp-weixin`
 
+
 ## 如果一键脚本失败
 
 按下面顺序手动执行：
@@ -40,3 +41,4 @@ npm run build:mp-weixin
 - H5 在 WSL 里编
 - 微信小程序在 Windows 镜像目录里编
 - HBuilderX / 微信开发者工具如果还显示旧版，先重开项目再看
+

@@ -12,7 +12,6 @@ declare (strict_types=1);
 
 namespace app\api\service;
 
-use app\api\service\cashier\Payment;
 use app\api\service\cashier\Payment as PaymentService;
 use app\common\service\BaseService;
 use cores\exception\BaseException;
@@ -35,6 +34,9 @@ class Cashier extends BaseService
 
     // 下单的客户端
     private string $client;
+
+    // 主动查单是否仍在待收口
+    private bool $pendingTradeQuery = false;
 
     /**
      * 设置支付的订单ID
@@ -120,7 +122,12 @@ class Cashier extends BaseService
     public function tradeQuery(string $outTradeNo): bool
     {
         $PaymentService = new PaymentService;
-        return $PaymentService->setMethod($this->method)->setClient($this->client)->tradeQuery($outTradeNo);
+        $result = $PaymentService->setMethod($this->method)->setClient($this->client)->tradeQuery($outTradeNo);
+        $this->pendingTradeQuery = $PaymentService->isPendingTradeQuery();
+        if (!$result && $PaymentService->hasError()) {
+            $this->setError($PaymentService->getError());
+        }
+        return $result;
     }
 
     /**
@@ -130,5 +137,14 @@ class Cashier extends BaseService
     public function getMessage(): string
     {
         return $this->message;
+    }
+
+    /**
+     * 当前查单是否仍在待收口
+     * @return bool
+     */
+    public function isPendingTradeQuery(): bool
+    {
+        return $this->pendingTradeQuery;
     }
 }

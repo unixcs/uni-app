@@ -65,6 +65,7 @@
 
 <script>
   import { OrderStatusEnum, PayStatusEnum } from '@/common/enum/order'
+  import RefundStatusEnum from '@/common/enum/order/refund/RefundStatus'
   import * as OrderApi from '@/api/order'
 
   export default {
@@ -72,6 +73,7 @@
       return {
         OrderStatusEnum,
         PayStatusEnum,
+        RefundStatusEnum,
         orderId: null,
         isLoading: true,
         order: {},
@@ -88,7 +90,10 @@
         return !!(this.order && this.order.action_flags && this.order.action_flags.can_pay)
       },
       canApplyRefund() {
-        if (!this.order || this.hasRefundInfo) {
+        if (!this.order) {
+          return false
+        }
+        if (this.hasActiveRefund) {
           return false
         }
         if (!this.isServiceOrder) {
@@ -112,6 +117,14 @@
       hasRefundInfo() {
         const info = this.refundInfo || {}
         return !!(info.order_refund_id || info.state_text || info.service_state_text || info.apply_desc || info.refuse_desc)
+      },
+      hasPrimaryRefundState() {
+        const info = this.refundInfo || {}
+        return !!info.order_refund_id && Number(info.state) === this.RefundStatusEnum.NORMAL.value && !info.is_terminal
+      },
+      hasActiveRefund() {
+        const info = this.refundInfo || {}
+        return !!info.order_refund_id && Number(info.state) === this.RefundStatusEnum.NORMAL.value
       },
       showFooterActions() {
         return this.canCancelOrder || this.canPayOrder || this.canApplyRefund
@@ -142,18 +155,22 @@
       },
       getOrderStateText(order) {
         if (!order || !order.order_id) return '--'
-        if (this.hasRefundInfo) return this.refundInfo.service_state_text || this.refundInfo.state_text || '--'
+        if (this.hasPrimaryRefundState) return this.refundInfo.service_state_text || this.refundInfo.state_text || '--'
         return order.service_state_text || order.state_text || '--'
       },
       normalizeRefundInfo(order) {
         const source = (order && order.refund_info) || {}
         return {
           order_refund_id: source.order_refund_id || '',
+          state: source.state == null ? '' : Number(source.state),
           state_text: source.state_text || '',
+          service_state: source.service_state || '',
           service_state_text: source.service_state_text || '',
           apply_desc: source.apply_desc || '',
           refuse_desc: source.refuse_desc || '',
           refund_money: source.refund_money == null ? '' : source.refund_money,
+          audit_status: source.audit_status == null ? '' : Number(source.audit_status),
+          is_terminal: !!source.is_terminal,
           images: source.images || []
         }
       },

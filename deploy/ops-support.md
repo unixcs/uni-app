@@ -55,6 +55,8 @@ DROP_AND_RECREATE=1 \
 - Nginx access/error 日志
 - PHP-FPM 日志
 - 订单创建、支付回调、上传图片是否正常
+- 小程序虚拟支付启用时，运行 `php think virtual-payment:sandbox-check --goods-id 10001 --user-mobile 19900000000`，确认配置、测试用户、商品映射和通知入口通过
+- 小程序虚拟支付启用时，观察 `wechat_virtual` 交易的支付通知、主动查单、重复通知幂等、退款收敛和履约回推结果
 - MySQL 磁盘使用率、连接数、慢查询
 - Redis 是否只监听本机且无异常重启
 - 定时任务 `php think timer start` 是否持续存活

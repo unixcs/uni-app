@@ -55,6 +55,9 @@ class Setting extends EnumBasics
     // 商城客服设置
     const CUSTOMER = 'customer';
 
+    // 小程序虚拟支付设置
+    const VIRTUAL_PAYMENT = 'virtual_payment';
+
     /**
      * 获取订单类型值
      * @return array
@@ -109,6 +112,10 @@ class Setting extends EnumBasics
             self::CUSTOMER => [
                 'value' => self::CUSTOMER,
                 'describe' => '商城客服设置',
+            ],
+            self::VIRTUAL_PAYMENT => [
+                'value' => self::VIRTUAL_PAYMENT,
+                'describe' => '小程序虚拟支付设置',
             ]
         ];
     }

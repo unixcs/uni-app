@@ -22,6 +22,7 @@ use app\common\enum\order\ReceiptStatus as ReceiptStatusEnum;
 use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
+use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
 use app\common\library\helper;
 use think\db\exception\DataNotFoundException;
 use think\db\exception\DbException;
@@ -148,6 +149,10 @@ class Order extends BaseModel
         if ($this->hasActiveRefundState($data)) {
             return '退款处理中';
         }
+        $pendingPayment = $this->getPendingVirtualPaymentConvergence($data);
+        if (!empty($pendingPayment)) {
+            return !empty($pendingPayment['is_paid_like']) ? '支付成功待入账' : '支付确认中';
+        }
         if ($data['pay_status'] == PayStatusEnum::PENDING) {
             return '待支付';
         }
@@ -188,6 +193,10 @@ class Order extends BaseModel
         if ($this->hasActiveRefundState($data)) {
             return '退款处理中';
         }
+        $pendingPayment = $this->getPendingVirtualPaymentConvergence($data);
+        if (!empty($pendingPayment)) {
+            return !empty($pendingPayment['is_paid_like']) ? '支付成功待入账' : '支付确认中';
+        }
         if ($data['pay_status'] == PayStatusEnum::PENDING) {
             return '待支付';
         }
@@ -223,6 +232,72 @@ class Order extends BaseModel
             ->where('type', '=', RefundTypeEnum::SERVICE)
             ->where('status', '=', 0)
             ->count() > 0;
+    }
+
+    /**
+     * 是否存在最近的虚拟支付待收口尝试
+     * @param array $data
+     * @param int $freshSeconds
+     * @return bool
+     */
+    protected function hasPendingVirtualPaymentConvergence(array $data, int $freshSeconds = 600): bool
+    {
+        return $this->getPendingVirtualPaymentConvergence($data, $freshSeconds) !== null;
+    }
+
+    /**
+     * 获取最近的虚拟支付待收口摘要
+     * 这里不再单纯依赖固定 TTL，而是更看重 trade 是否仍处于未终态。
+     * @param array $data
+     * @param int $freshSeconds
+     * @return array|null
+     */
+    protected function getPendingVirtualPaymentConvergence(array $data, int $freshSeconds = 600): ?array
+    {
+        if ((int)($data['pay_status'] ?? 0) !== PayStatusEnum::PENDING) {
+            return null;
+        }
+        if ((int)($data['order_status'] ?? 0) !== OrderStatusEnum::NORMAL) {
+            return null;
+        }
+        $orderId = (int)($data['order_id'] ?? 0);
+        if ($orderId <= 0) {
+            return null;
+        }
+        $trade = (new PaymentTrade())
+            ->where('order_id', '=', $orderId)
+            ->where('platform', '=', 'wechat_virtual')
+            ->where('trade_state', 'not in', [TradeStatusEnum::SUCCESS, TradeStatusEnum::REFUND])
+            ->order(['trade_id' => 'desc'])
+            ->find();
+        if (empty($trade)) {
+            return null;
+        }
+        $snapshot = PaymentTrade::decodePayloadSnapshot((string)($trade['payload_snapshot'] ?? ''));
+        $queryOrder = (array)($snapshot['query_order'] ?? []);
+        $timerQueryOrder = (array)($snapshot['timer_query_order'] ?? []);
+        $hasPayNotify = !empty($snapshot['pay_notify']);
+        $queryStatus = isset($queryOrder['status']) ? (int)$queryOrder['status'] : null;
+        $timerQueryStatus = isset($timerQueryOrder['status']) ? (int)$timerQueryOrder['status'] : null;
+        $isPendingStatus = in_array($queryStatus, [0, 1], true) || in_array($timerQueryStatus, [0, 1], true);
+        $isPaidLikeStatus = $hasPayNotify
+            || in_array($queryStatus, [2, 3], true)
+            || in_array($timerQueryStatus, [2, 3], true);
+        if (!$isPaidLikeStatus) {
+            return null;
+        }
+        $queryAt = (int)($queryOrder['queried_at'] ?? 0);
+        $timerQueryAt = (int)($timerQueryOrder['queried_at'] ?? 0);
+        $recentAt = max($queryAt, $timerQueryAt, (int)($trade['update_time'] ?? 0), (int)($trade['create_time'] ?? 0));
+        return [
+            'trade_id' => (int)$trade['trade_id'],
+            'out_trade_no' => (string)($trade['out_trade_no'] ?? ''),
+            'query_status' => $queryStatus,
+            'timer_query_status' => $timerQueryStatus,
+            'recent_at' => $recentAt,
+            'has_pay_notify' => $hasPayNotify,
+            'is_paid_like' => $isPaidLikeStatus,
+        ];
     }
 
     /**
@@ -482,6 +557,9 @@ class Order extends BaseModel
     public static function detail($where, array $with = [])
     {
         is_array($where) ? $filter = $where : $filter['order_id'] = (int)$where;
+        if (!array_key_exists('is_delete', $filter)) {
+            $filter['is_delete'] = 0;
+        }
         return self::get($filter, $with);
     }
 

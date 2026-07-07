@@ -252,7 +252,20 @@ class PaySuccess extends BaseService
         try {
             $orderInfo['trade_id'] = $this->tradeId;
             $orderInfo['pay_method'] = $this->method;
-            $status = (new RefundService)->handle($orderInfo);
+            $context = [];
+            if ($this->tradeId) {
+                $tradeInfo = PaymentTradeModel::detail($this->tradeId);
+                if (!empty($tradeInfo) && (string)($tradeInfo['platform'] ?? '') === 'wechat_virtual') {
+                    $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeInfo['payload_snapshot'] ?? ''));
+                    $virtualRefund = (array)($snapshot['virtual_refund'] ?? []);
+                    if (!empty($virtualRefund['duplicate_payment']) && \in_array((string)($virtualRefund['status'] ?? ''), ['processing', 'completed'], true)) {
+                        Log::append('PaySuccess --originalRefund', ['status' => 'skip_duplicate_virtual_refund']);
+                        return;
+                    }
+                    $context['duplicate_payment'] = true;
+                }
+            }
+            $status = (new RefundService)->handle($orderInfo, null, $context);
             Log::append('PaySuccess --originalRefund', ['status' => $status ? 'true' : 'false']);
         } catch (\Throwable $e) {
             Log::append('PaySuccess --originalRefund', ['status' => 'false', 'errorMsg' => $e->getMessage()]);

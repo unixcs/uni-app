@@ -73,6 +73,7 @@
 - 数据库账号使用独立生产账号，不要留占位符
 - Redis 默认只监听本机回环地址，除非已做好 ACL / 内网隔离
 - 生产环境上线前确认 `yoshop2.0/public/admin` 与 `yoshop2.0/public/store` 已有编译产物
+- `yoshop2.0/public/uploads` 与 `yoshop2.0/runtime` 必须对 `php-fpm` 运行用户可写，推荐所有者为 `www-data:www-data`
 
 如需后台前端，也可分别安装并编译：
 

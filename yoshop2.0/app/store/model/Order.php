@@ -12,7 +12,11 @@ declare (strict_types=1);
 
 namespace app\store\model;
 
+use app\api\model\wxapp\Setting as WxappSettingModel;
 use app\common\model\Order as OrderModel;
+use app\common\model\PaymentTrade as PaymentTradeModel;
+use app\common\model\Goods as CommonGoodsModel;
+use app\common\model\store\Setting as StoreSettingModel;
 use app\common\service\Order as OrderService;
 use app\common\service\order\Complete as OrderCompleteService;
 use app\common\service\order\Refund as RefundService;
@@ -30,7 +34,9 @@ use app\common\enum\order\refund\AuditStatus as RefundAuditStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\payment\Method as PaymentMethod;
+use app\common\enum\Setting as SettingEnum;
 use app\common\library\helper;
+use app\common\library\wechat\VirtualPayment as WechatVirtualPayment;
 use cores\exception\BaseException;
 
 /**
@@ -52,6 +58,13 @@ class Order extends OrderModel
             'goods' => ['image', 'refund'],
             'trade',
         ]);
+        if ($detail) {
+            $virtualTrade = $this->resolveBackendVirtualTrade($detail);
+            if (!empty($virtualTrade)) {
+                $detail->setRelation('trade', $virtualTrade);
+                $detail['virtual_payment_summary'] = $this->buildVirtualPaymentSummary($virtualTrade);
+            }
+        }
         return $this->appendBackendActionFlags($detail);
     }
 
@@ -82,6 +95,12 @@ class Order extends OrderModel
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
+            if ($this->shouldExcludeRefundingOrdersFromDataType($params['dataType'])) {
+                $refundOrderIds = $this->getRefundOrderIdsByDataType(DataTypeEnum::APPLY_CANCEL);
+                if (!empty($refundOrderIds)) {
+                    $query->where('order.order_id', 'not in', $refundOrderIds);
+                }
+            }
         }
         $list = $query->paginate(10);
         foreach ($list as $item) {
@@ -116,7 +135,13 @@ class Order extends OrderModel
         if (!$this->checkCanCompleteService()) {
             return false;
         }
-        return $this->transaction(function () {
+        $shouldNotifyVirtualProvideGoods = false;
+        $virtualTrade = $this->resolveBackendVirtualTrade($this);
+        if (!empty($virtualTrade)) {
+            $this->setRelation('trade', $virtualTrade);
+            $this['trade_id'] = (int)($virtualTrade['trade_id'] ?? $this['trade_id']);
+        }
+        $status = $this->transaction(function () use (&$shouldNotifyVirtualProvideGoods) {
             $status = $this->save([
                 'receipt_status' => ReceiptStatusEnum::RECEIVED,
                 'receipt_time' => time(),
@@ -125,9 +150,22 @@ class Order extends OrderModel
             if ($status === false) {
                 return false;
             }
+            $shouldNotifyVirtualProvideGoods = (string)($this['trade']['platform'] ?? '') === 'wechat_virtual';
+            if ($shouldNotifyVirtualProvideGoods) {
+                PaymentTradeModel::mergePayloadSnapshot((int)$this['trade_id'], [
+                    'provide_goods' => [
+                        'status' => 'pending',
+                        'queued_at' => time(),
+                    ],
+                ]);
+            }
             (new OrderCompleteService)->complete([$this], static::$storeId);
             return true;
         });
+        if ($status && $shouldNotifyVirtualProvideGoods) {
+            $this->notifyVirtualProvideGoods();
+        }
+        return $status;
     }
 
     /**
@@ -201,6 +239,12 @@ class Order extends OrderModel
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
+            if ($this->shouldExcludeRefundingOrdersFromDataType($params['dataType'])) {
+                $refundOrderIds = $this->getRefundOrderIdsByDataType(DataTypeEnum::APPLY_CANCEL);
+                if (!empty($refundOrderIds)) {
+                    $query->where('order.order_id', 'not in', $refundOrderIds);
+                }
+            }
         }
         return $query->select();
     }
@@ -288,7 +332,14 @@ class Order extends OrderModel
                 );
                 break;
             case 60:
-                $query->where('trade.out_trade_no', 'like', "%{$searchLikeValue}%");
+                $query->where(function ($subQuery) use ($searchLikeValue) {
+                    $subQuery->where('trade.out_trade_no', 'like', "%{$searchLikeValue}%")
+                        ->whereExists(function ($existsQuery) use ($searchLikeValue) {
+                            $existsQuery->name('payment_trade')
+                                ->whereRaw('payment_trade.order_id = `order`.order_id')
+                                ->where('payment_trade.out_trade_no', 'like', "%{$searchLikeValue}%");
+                        }, 'OR');
+                });
                 break;
         }
     }
@@ -366,6 +417,19 @@ class Order extends OrderModel
     private function isRefundDataType(string $dataType): bool
     {
         return in_array($dataType, [DataTypeEnum::APPLY_CANCEL, DataTypeEnum::REFUND, 'refund'], true);
+    }
+
+    /**
+     * 退款中的服务单不应继续混入普通服务流程分组。
+     */
+    private function shouldExcludeRefundingOrdersFromDataType(string $dataType): bool
+    {
+        return in_array($dataType, [
+            DataTypeEnum::CONTACT,
+            DataTypeEnum::DELIVERY,
+            DataTypeEnum::IN_SERVICE,
+            DataTypeEnum::RECEIPT,
+        ], true);
     }
 
     /**
@@ -706,6 +770,49 @@ class Order extends OrderModel
         return $order;
     }
 
+
+    /**
+     * 后台订单详情优先解析与当前订单最相关的虚拟支付交易
+     * 优先顺序：当前进行中退款绑定的交易 > 订单当前 trade_id > 最近成功/已退款交易 > 最近一笔虚拟交易
+     * @param array|self $order
+     * @return PaymentTradeModel|array|null
+     */
+    private function resolveBackendVirtualTrade($order)
+    {
+        $orderId = (int)($order['order_id'] ?? 0);
+        if ($orderId <= 0) {
+            return $order['trade'] ?? null;
+        }
+        $activeRefund = $this->getActiveServiceRefundSummary($order);
+        $activeRefundId = (int)($activeRefund['order_refund_id'] ?? 0);
+        $trades = PaymentTradeModel::getVirtualTradesByOrderId($orderId);
+        if ($trades->isEmpty()) {
+            return $order['trade'] ?? null;
+        }
+        if ($activeRefundId > 0) {
+            foreach ($trades as $trade) {
+                $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($trade['payload_snapshot'] ?? ''));
+                if ((int)($snapshot['virtual_refund']['order_refund_id'] ?? 0) === $activeRefundId) {
+                    return $trade;
+                }
+            }
+        }
+        $currentTradeId = (int)($order['trade_id'] ?? 0);
+        if ($currentTradeId > 0) {
+            foreach ($trades as $trade) {
+                if ((int)$trade['trade_id'] === $currentTradeId) {
+                    return $trade;
+                }
+            }
+        }
+        foreach ($trades as $trade) {
+            if (in_array((int)($trade['trade_state'] ?? 0), [20, 30], true)) {
+                return $trade;
+            }
+        }
+        return $trades[0] ?? ($order['trade'] ?? null);
+    }
+
     /**
      * 当前订单是否存在进行中的退款申请
      * @param int $orderId
@@ -757,5 +864,90 @@ class Order extends OrderModel
     private function isServiceOrder($order): bool
     {
         return static::isServiceOrderData($order);
+    }
+
+    /**
+     * 通知微信虚拟支付已完成履约
+     * 失败仅记录到交易快照，交由补偿任务继续收敛。
+     * @return void
+     */
+    private function notifyVirtualProvideGoods(): void
+    {
+        if ((string)($this['trade']['platform'] ?? '') !== 'wechat_virtual') {
+            return;
+        }
+        $claim = PaymentTradeModel::claimProvideGoodsDispatch((int)$this['trade_id'], 'store_complete_service');
+        if (empty($claim['claimed'])) {
+            return;
+        }
+        $config = StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT, (int)$this['store_id']);
+        if ((int)($config['enabled'] ?? 0) !== 1) {
+            PaymentTradeModel::finishProvideGoodsDispatch((int)$this['trade_id'], 'skipped', [
+                'reason' => 'virtual_payment_disabled',
+            ]);
+            return;
+        }
+        $wxapp = WxappSettingModel::getConfigBasic((int)$this['store_id']);
+        $appId = (string)($wxapp['app_id'] ?? '');
+        $appSecret = (string)($wxapp['app_secret'] ?? '');
+        $env = (int)($this['trade']['env'] ?? $config['env'] ?? 0);
+        $appKey = $env === CommonGoodsModel::VP_ENV_SANDBOX
+            ? (string)($config['sandbox_app_key'] ?? '')
+            : (string)($config['production_app_key'] ?? '');
+        if ($appId === '' || $appSecret === '' || $appKey === '') {
+            PaymentTradeModel::finishProvideGoodsDispatch((int)$this['trade_id'], 'failed', [
+                'reason' => 'virtual_payment_config_missing',
+            ]);
+            return;
+        }
+        $payload = [
+            'order_id' => (string)$this['trade']['out_trade_no'],
+            'env' => $env,
+        ];
+        try {
+            $payment = new WechatVirtualPayment($appId, $appSecret, $appKey);
+            $result = $payment->notifyProvideGoods($payload);
+            PaymentTradeModel::finishProvideGoodsDispatch(
+                (int)$this['trade_id'],
+                (int)($result['errcode'] ?? -1) === 0 ? 'success' : 'failed',
+                [
+                    'request_payload' => $payload,
+                    'result' => $result,
+                ]
+            );
+        } catch (\Throwable $e) {
+            PaymentTradeModel::finishProvideGoodsDispatch((int)$this['trade_id'], 'failed', [
+                'request_payload' => $payload,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * 构建后台订单详情中的虚拟支付摘要
+     * @param PaymentTradeModel|array $trade
+     * @return array
+     */
+    private function buildVirtualPaymentSummary($trade): array
+    {
+        $tradeData = \is_array($trade) ? $trade : $trade->toArray();
+        if ((string)($tradeData['platform'] ?? '') !== 'wechat_virtual') {
+            return [];
+        }
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeData['payload_snapshot'] ?? ''));
+        $provideGoods = (array)($snapshot['provide_goods'] ?? []);
+        $refundNotify = (array)($snapshot['refund_notify'] ?? []);
+        return [
+            'enabled' => true,
+            'platform' => (string)($tradeData['platform'] ?? ''),
+            'env' => (int)($tradeData['env'] ?? 0),
+            'product_id' => (string)($tradeData['product_id'] ?? ''),
+            'goods_price' => (int)($tradeData['goods_price'] ?? 0),
+            'notify_times' => (int)($tradeData['notify_times'] ?? 0),
+            'last_notify_time' => (int)($tradeData['last_notify_time'] ?? 0),
+            'trade_state' => (int)($tradeData['trade_state'] ?? 0),
+            'refund_status' => (string)($refundNotify['payload']['RetMsg'] ?? ''),
+            'provide_goods_status' => (string)($provideGoods['status'] ?? ''),
+        ];
     }
 }

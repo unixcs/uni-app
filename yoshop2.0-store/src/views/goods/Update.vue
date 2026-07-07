@@ -327,6 +327,47 @@
                 </div>
               </a-form-item>
             </div>
+
+            <a-divider orientation="left">虚拟支付映射</a-divider>
+            <a-form-item
+              label="启用虚拟支付"
+              :labelCol="labelCol"
+              :wrapperCol="wrapperCol"
+              extra="仅服务商品、单规格、无需配送商品可启用"
+            >
+              <a-radio-group
+                v-decorator="['vp_enabled', { initialValue: 0, rules: [{ required: true }] }]"
+                @change="onForceUpdate(true)"
+              >
+                <a-radio :value="0">关闭</a-radio>
+                <a-radio :value="1">开启</a-radio>
+              </a-radio-group>
+            </a-form-item>
+            <template v-if="form.getFieldValue('vp_enabled')">
+              <a-form-item
+                label="虚拟支付 productId"
+                :labelCol="labelCol"
+                :wrapperCol="wrapperCol"
+                extra="填写微信虚拟支付后台已发布的道具ID"
+              >
+                <a-input
+                  placeholder="例如：vip99"
+                  v-decorator="['vp_product_id', { rules: [{ required: true, message: '请输入虚拟支付 productId' }] }]"
+                />
+              </a-form-item>
+              <a-form-item
+                label="平台价格快照"
+                :labelCol="labelCol"
+                :wrapperCol="wrapperCol"
+                extra="单位为分，必须与服务价格完全一致，例如 9.90 元填写 990"
+              >
+                <a-input-number
+                  :min="1"
+                  :precision="0"
+                  v-decorator="['vp_price_snapshot', { rules: [{ required: true, message: '请输入平台价格快照' }] }]"
+                />
+              </a-form-item>
+            </template>
           </div>
         </div>
         <a-form-item class="mt-20" :wrapperCol="{ span: wrapperCol.span, offset: labelCol.span }">
@@ -473,7 +514,7 @@ export default {
         ['goods_type', 'goods_name', 'categorys', 'imagesIds', 'goods_no', 'status', 'sort'],
         ['spec_type', 'goods_price', 'stock_num', 'is_restrict', 'restrict_total', 'restrict_single'],
         ['content'],
-        ['alone_grade_equity', 'first_money', 'second_money', 'third_money']
+        ['alone_grade_equity', 'first_money', 'second_money', 'third_money', 'vp_product_id', 'vp_price_snapshot']
       ]
       const field = Object.keys(errors).shift()
       for (const key in tabsFieldsMap) {

@@ -44,6 +44,12 @@ class Login extends BaseService
      */
     private ?UserModel $userInfo;
 
+    /**
+     * 当前登录态关联的小程序 session_key
+     * @var string
+     */
+    private string $currentSessionKey = '';
+
     // 用于生成token的自定义盐
     const TOKEN_SALT = 'user_salt';
 
@@ -83,6 +89,7 @@ class Login extends BaseService
     {
         // 获取微信小程序登录态(session)
         $wxSession = PartyService::getMpWxSession($form['partyData']['code']);
+        $this->currentSessionKey = (string)($wxSession['session_key'] ?? '');
         // 判断openid是否存在
         $userId = OauthService::getUserIdByOauthId($wxSession['openid'], ClientEnum::MP_WEIXIN);
         // 获取用户信息
@@ -148,6 +155,7 @@ class Login extends BaseService
     {
         // 获取微信小程序登录态(session)
         $wxSession = PartyService::getMpWxSession($form['code']);
+        $this->currentSessionKey = (string)($wxSession['session_key'] ?? '');
         // 解密encryptedData -> 拿到手机号
         $plainData = OauthService::wxDecryptData($form['encryptedData'], $form['iv'], $wxSession['session_key']);
         // 整理登录注册数据
@@ -255,11 +263,15 @@ class Login extends BaseService
      */
     private function createUser(string $mobile, bool $isParty, array $partyData = []): void
     {
+        $platform = function_exists('getPlatform') ? (string)\getPlatform() : '';
+        if ($platform === '') {
+            $platform = ClientEnum::H5;
+        }
         // 用户信息
         $data = [
             'mobile' => $mobile,
             'nick_name' => !empty($mobile) ? \hide_mobile($mobile) : '',
-            'platform' => \getPlatform(),
+            'platform' => $platform,
             'last_login_time' => \time(),
             'store_id' => $this->storeId
         ];
@@ -327,6 +339,7 @@ class Login extends BaseService
             'user' => $this->userInfo,
             'store_id' => $this->storeId,
             'is_login' => true,
+            'mp_weixin_session_key' => $this->currentSessionKey,
         ], 86400 * 30);
         return true;
     }

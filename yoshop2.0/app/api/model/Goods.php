@@ -248,13 +248,11 @@ class Goods extends GoodsModel
      */
     private function isServicePackageGoods($goods): bool
     {
-        if ((int)$goods['goods_type'] === OrderTypeEnum::PHYSICAL) {
+        $deliveryTypes = (array)($goods['delivery_type'] ?? []);
+        if (!in_array(DeliveryTypeEnum::NOTHING, $deliveryTypes, true)) {
             return false;
         }
-        if (empty(GoodsServiceRelModel::getServiceIds((int)$goods['goods_id']))) {
-            return false;
-        }
-        return in_array(DeliveryTypeEnum::NOTHING, (array)($goods['delivery_type'] ?? []));
+        return !empty(GoodsServiceRelModel::getServiceIds((int)$goods['goods_id']));
     }
 
     /**

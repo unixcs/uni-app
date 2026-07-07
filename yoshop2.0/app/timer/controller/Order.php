@@ -38,10 +38,21 @@ class Order extends BaseTimer
         ['storeId' => $this->storeId] = $param;
         $this->setInterval($this->storeId, $this->taskKey, $this->taskExpire, function () {
             echo $this->taskKey . PHP_EOL;
-            // 未支付订单自动关闭
-            $this->closeEvent();
-            // 已完成订单结算
-            $this->settledEvent();
+            $this->runIsolated('syncVirtualTradeStates', function () {
+                $this->syncVirtualTradeStates();
+            });
+            $this->runIsolated('closeEvent', function () {
+                $this->closeEvent();
+            });
+            $this->runIsolated('syncVirtualRefunds', function () {
+                $this->syncVirtualRefunds();
+            });
+            $this->runIsolated('syncVirtualProvideGoods', function () {
+                $this->syncVirtualProvideGoods();
+            });
+            $this->runIsolated('settledEvent', function () {
+                $this->settledEvent();
+            });
         });
     }
 
@@ -76,6 +87,56 @@ class Order extends BaseTimer
         if ($refundDays > 0) {
             $service = new OrderService;
             $service->settledEvent($this->storeId, $refundDays);
+        }
+    }
+
+    /**
+     * 虚拟支付退款状态收敛
+     * @return void
+     */
+    private function syncVirtualRefunds()
+    {
+        $service = new OrderService;
+        $service->syncVirtualRefunds($this->storeId);
+    }
+
+    /**
+     * 虚拟支付支付状态收敛
+     * @return void
+     */
+    private function syncVirtualTradeStates()
+    {
+        $service = new OrderService;
+        $service->syncVirtualTradeStates($this->storeId);
+    }
+
+    /**
+     * 虚拟支付履约通知补偿
+     * @return void
+     */
+    private function syncVirtualProvideGoods()
+    {
+        $service = new OrderService;
+        $service->syncVirtualProvideGoods($this->storeId);
+    }
+
+    /**
+     * 隔离执行单个子任务，避免互相拖垮
+     * @param string $name
+     * @param callable $callback
+     * @return void
+     */
+    private function runIsolated(string $name, callable $callback): void
+    {
+        try {
+            $callback();
+        } catch (\Throwable $e) {
+            log_record([
+                'name' => '定时任务异常',
+                'task' => $this->taskKey,
+                'method' => $name,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

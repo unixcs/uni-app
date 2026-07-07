@@ -55,6 +55,7 @@ class Party extends BaseService
                 'oauth_type' => $partyData['oauth'],
                 'oauth_id' => $oauthInfo['oauth_id'],
                 'unionid' => $oauthInfo['unionid'] ?? '',   // unionid可以不存在
+                'session_key' => $oauthInfo['session_key'] ?? '',
                 'store_id' => $this->storeId
             ]);
         }
@@ -63,6 +64,14 @@ class Party extends BaseService
             // isBack参数代表需重新获取code, 前端拿到该参数进行页面返回
             throwError('很抱歉，当前手机号已绑定其他微信号', null, ['isBack' => true]);
         }
+        UserOauthModel::updateBase([
+            'unionid' => $oauthInfo['unionid'] ?? '',
+            'session_key' => $oauthInfo['session_key'] ?? '',
+            'update_time' => time(),
+        ], [
+            'user_id' => $userId,
+            'oauth_type' => $partyData['oauth'],
+        ]);
         return true;
     }
 
@@ -143,7 +152,11 @@ class Party extends BaseService
     {
         if ($partyData['oauth'] === ClientEnum::MP_WEIXIN) {
             $wxSession = static::getMpWxSession($partyData['code']);
-            return ['oauth_id' => $wxSession['openid'], 'unionid' => $wxSession['unionid'] ?? null];
+            return [
+                'oauth_id' => $wxSession['openid'],
+                'unionid' => $wxSession['unionid'] ?? null,
+                'session_key' => $wxSession['session_key'] ?? '',
+            ];
         }
         return null;
     }

@@ -8,7 +8,7 @@
     "build:mp-weixin": "node ./scripts/build-mp-weixin.cjs",
     "dev:all": "node ./scripts/dev-all.cjs",
     "preview": "vite preview",
-    "postinstall": "node ./scripts/create-vue-cli-preprocess-shim.cjs"
+    "postinstall": "node ./scripts/create-vue-cli-preprocess-shim.cjs && node ./scripts/patch-vuex-effectscope-compat.cjs"
   },
   "dependencies": {
     "vue": "3.1.5",

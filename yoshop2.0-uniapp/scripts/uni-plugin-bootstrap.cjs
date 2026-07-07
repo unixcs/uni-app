@@ -1,6 +1,12 @@
 const path = require('path')
+const fs = require('fs')
 
 const inputDir = path.resolve(__dirname, '..')
+const vuexCompatPatch = path.resolve(__dirname, './patch-vuex-effectscope-compat.cjs')
+
+if (fs.existsSync(vuexCompatPatch)) {
+  require(vuexCompatPatch)
+}
 
 global.uniPlugin = global.uniPlugin || {
   options: {},

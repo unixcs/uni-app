@@ -351,6 +351,15 @@ class ServiceOrderE2eAutomation extends Command
             'username' => $config['backend_user'],
             'password' => $config['backend_pass'],
         ]);
+        if (empty($h5['data']['data']['token']) && (($h5['data']['message'] ?? '') === '当前接口仅调试环境可用')) {
+            $h5 = [
+                'data' => [
+                    'data' => [
+                        'token' => $this->createLocalDebugToken(),
+                    ],
+                ],
+            ];
+        }
         if (empty($h5['data']['data']['token']) || empty($backend['data']['data']['token'])) {
             $this->writeFailure('login', ['h5' => $h5, 'backend' => $backend]);
             throw new RuntimeException('登录 token 获取失败');
@@ -359,6 +368,15 @@ class ServiceOrderE2eAutomation extends Command
             'h5' => (string)$h5['data']['data']['token'],
             'backend' => (string)$backend['data']['data']['token'],
         ];
+    }
+
+    private function createLocalDebugToken(): string
+    {
+        $service = new \app\api\service\passport\Login();
+        if (!$service->loginDebug()) {
+            throw new RuntimeException($service->getError() ?: '创建本地调试 token 失败');
+        }
+        return $service->getToken((int)$service->getUserInfo()['user_id']);
     }
 
     /** @return array<string, array<string, mixed>> */

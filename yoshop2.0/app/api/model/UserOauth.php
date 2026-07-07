@@ -28,6 +28,7 @@ class UserOauth extends UserOauthModel
     protected $hidden = [
         'store_id',
         'is_delete',
+        'session_key',
         'create_time',
         'update_time',
     ];

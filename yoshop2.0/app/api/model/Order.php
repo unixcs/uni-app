@@ -84,6 +84,7 @@ class Order extends OrderModel
         'can_pay',
         'can_apply_refund',
         'can_refund',
+        'pending_payment_info',
     ];
 
     // 信息提示
@@ -148,6 +149,12 @@ class Order extends OrderModel
             $query->where('order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
+            if ($this->shouldExcludeRefundingOrdersFromDataType($dataType)) {
+                $refundOrderIds = $this->getRefundingOrderIds($userId);
+                if (!empty($refundOrderIds)) {
+                    $query->where('order_id', 'not in', $refundOrderIds);
+                }
+            }
         }
         // 查询列表数据
         return $query->order(['create_time' => 'desc'])->paginate(15);
@@ -219,6 +226,12 @@ class Order extends OrderModel
             $query->where('order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
         } else {
             $query->where($dataTypeFilter);
+            if ($this->shouldExcludeRefundingOrdersFromDataType($dataType)) {
+                $refundOrderIds = $this->getRefundingOrderIds($userId);
+                if (!empty($refundOrderIds)) {
+                    $query->where('order_id', 'not in', $refundOrderIds);
+                }
+            }
         }
         // 查询数据
         return $query->count();
@@ -292,7 +305,7 @@ class Order extends OrderModel
      * @throws \think\db\exception\DbException
      * @throws \think\db\exception\ModelNotFoundException
      */
-    public static function getUserOrderDetail(int $orderId, bool $onlyCurrentUser = true)
+    public static function getUserOrderDetail($orderId, bool $onlyCurrentUser = true)
     {
         // 查询订单记录
         $with = ['goods' => ['image', 'refund']];
@@ -347,10 +360,11 @@ class Order extends OrderModel
      * @return Order|array|null
      * @throws BaseException
      */
-    public static function getDetail(int $orderId, array $with = [], bool $onlyCurrentUser = true)
+    public static function getDetail($orderId, array $with = [], bool $onlyCurrentUser = true)
     {
+        $resolvedOrderId = static::resolvePaymentAdjacentOrderId($orderId, $onlyCurrentUser);
         // 查询条件
-        $where = ['order_id' => $orderId];
+        $where = ['order_id' => $resolvedOrderId];
         $onlyCurrentUser && $where['user_id'] = UserService::getCurrentLoginUserId();
         // 查询订单记录
         $order = static::detail($where, $with);
@@ -599,7 +613,7 @@ class Order extends OrderModel
      */
     public function getRefundStateAttr($value, $data): int
     {
-        $refund = $this->getLatestRefund();
+        $refund = $this->getProjectedRefund();
         return empty($refund) ? 0 : (int)$refund['status'];
     }
 
@@ -611,23 +625,12 @@ class Order extends OrderModel
      */
     public function getRefundStateTextAttr($value, $data): string
     {
-        $refund = $this->getLatestRefund();
+        $refund = $this->getProjectedRefund();
         if (empty($refund)) {
             return '';
         }
-        if ($refund['status'] == RefundStatusEnum::NORMAL) {
-            return $refund['audit_status'] == RefundAuditStatusEnum::WAIT ? '退款审核中' : '退款处理中';
-        }
-        if ($refund['status'] == RefundStatusEnum::REJECTED) {
-            return '退款已拒绝';
-        }
-        if ($refund['status'] == RefundStatusEnum::COMPLETED) {
-            return '退款成功';
-        }
-        if ($refund['status'] == RefundStatusEnum::CANCELLED) {
-            return '退款已取消';
-        }
-        return '';
+        $projection = OrderRefundModel::buildServiceProjection((array)$refund);
+        return (string)($projection['state_text'] ?? '');
     }
 
     /**
@@ -637,20 +640,60 @@ class Order extends OrderModel
      */
     public function getRefundInfoAttr($value): ?array
     {
-        $refund = $this->getLatestRefund();
+        $refund = $this->getProjectedRefund();
         if (empty($refund)) {
             return null;
         }
+        $projection = OrderRefundModel::buildServiceProjection((array)$refund);
         return [
             'order_refund_id' => (int)($refund['order_refund_id'] ?? 0),
-            'state' => (int)($refund['status'] ?? 0),
-            'state_text' => $this->getRefundStateTextAttr('', []),
-            'service_state' => (string)$this['refund_state'],
-            'service_state_text' => (string)$this['refund_state_text'],
+            'state' => (int)($projection['state'] ?? ($refund['status'] ?? 0)),
+            'state_text' => (string)($projection['state_text'] ?? ''),
+            'service_state' => (string)($projection['service_state'] ?? ''),
+            'service_state_text' => (string)($projection['service_state_text'] ?? ''),
             'apply_desc' => (string)($refund['apply_desc'] ?? ''),
             'refuse_desc' => (string)($refund['refuse_desc'] ?? ''),
             'refund_money' => $refund['refund_money'] ?? '',
             'audit_status' => (int)($refund['audit_status'] ?? 0),
+            'is_terminal' => (bool)($projection['is_terminal'] ?? false),
+        ];
+    }
+
+    /**
+     * 获取当前订单的退款投影源
+     * 优先进行中的退款，其次最近一条退款
+     * @return array|null
+     */
+    private function getProjectedRefund(): ?array
+    {
+        $activeRefund = $this->getActiveRefund();
+        if (!empty($activeRefund)) {
+            return $activeRefund;
+        }
+        return $this->getLatestRefund();
+    }
+
+    /**
+     * 获取器：待收口支付摘要
+     * @param $value
+     * @param $data
+     * @return array|null
+     */
+    public function getPendingPaymentInfoAttr($value, $data): ?array
+    {
+        $summary = $this->getPendingVirtualPaymentConvergence($data);
+        if (empty($summary)) {
+            return null;
+        }
+        $isPaidLike = !empty($summary['is_paid_like']);
+        return [
+            'trade_id' => (int)($summary['trade_id'] ?? 0),
+            'out_trade_no' => (string)($summary['out_trade_no'] ?? ''),
+            'query_status' => isset($summary['query_status']) ? (int)$summary['query_status'] : null,
+            'timer_query_status' => isset($summary['timer_query_status']) ? (int)$summary['timer_query_status'] : null,
+            'recent_at' => (int)($summary['recent_at'] ?? 0),
+            'is_paid_like' => $isPaidLike,
+            'state_text' => $isPaidLike ? '支付成功待入账' : '支付确认中',
         ];
     }
 
@@ -673,6 +716,9 @@ class Order extends OrderModel
      */
     public function getCanCancelAttr($value, $data): bool
     {
+        if ($this->hasPendingVirtualPaymentConvergence($data)) {
+            return false;
+        }
         return $data['pay_status'] == PayStatusEnum::PENDING && $data['order_status'] == OrderStatusEnum::NORMAL;
     }
 
@@ -684,6 +730,9 @@ class Order extends OrderModel
      */
     public function getCanPayAttr($value, $data): bool
     {
+        if ($this->hasPendingVirtualPaymentConvergence($data)) {
+            return false;
+        }
         return $data['pay_status'] == PayStatusEnum::PENDING && $data['order_status'] == OrderStatusEnum::NORMAL;
     }
 
@@ -763,6 +812,42 @@ class Order extends OrderModel
     }
 
     /**
+     * 支付相关外部入口兼容：允许使用 out_trade_no 跳到业务订单
+     * @param mixed $orderId
+     * @param bool $onlyCurrentUser
+     * @return int
+     */
+    private static function resolvePaymentAdjacentOrderId($orderId, bool $onlyCurrentUser = true): int
+    {
+        if (is_numeric($orderId)) {
+            $numericOrderId = (int)$orderId;
+            if ($numericOrderId > 0) {
+                $where = ['order_id' => $numericOrderId];
+                $onlyCurrentUser && $where['user_id'] = UserService::getCurrentLoginUserId();
+                if (!empty(static::detail($where))) {
+                    return $numericOrderId;
+                }
+            }
+        }
+        $trade = PaymentTrade::detail(['out_trade_no' => (string)$orderId]);
+        if (empty($trade)) {
+            throwError('订单不存在');
+        }
+        $resolvedOrderId = (int)($trade['order_id'] ?? 0);
+        if ($resolvedOrderId <= 0) {
+            throwError('订单不存在');
+        }
+        if ($onlyCurrentUser) {
+            $order = static::detail([
+                'order_id' => $resolvedOrderId,
+                'user_id' => UserService::getCurrentLoginUserId(),
+            ]);
+            empty($order) && throwError('订单不存在');
+        }
+        return $resolvedOrderId;
+    }
+
+    /**
      * 获取当前用户退款中的订单ID列表
      * @param int $userId
      * @return array
@@ -774,5 +859,19 @@ class Order extends OrderModel
             ->where('user_id', '=', $userId)
             ->where('status', '=', RefundStatusEnum::NORMAL)
             ->column('order_id')));
+    }
+
+    /**
+     * 退款中的服务单不应继续混入普通服务流程分组。
+     */
+    private function shouldExcludeRefundingOrdersFromDataType(string $dataType): bool
+    {
+        return in_array($dataType, [
+            DataTypeEnum::CONTACT,
+            DataTypeEnum::DELIVERY,
+            DataTypeEnum::IN_SERVICE,
+            DataTypeEnum::RECEIPT,
+            'received',
+        ], true);
     }
 }

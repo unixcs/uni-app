@@ -5409,3 +5409,21 @@ INSERT INTO `yoshop_region` VALUES ('3926', '可克达拉市', '3710', '659008',
 INSERT INTO `yoshop_region` VALUES ('3927', '昆玉市', '3710', '659009', '3');
 INSERT INTO `yoshop_region` VALUES ('3928', '胡杨河市', '3710', '659010', '3');
 INSERT INTO `yoshop_region` VALUES ('3929', '新星市', '3710', '659011', '3');
+
+ALTER TABLE `yoshop_goods`
+  ADD COLUMN `vp_enabled` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '是否启用虚拟支付' AFTER `is_enable_grade`,
+  ADD COLUMN `vp_product_id` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '虚拟支付道具ID' AFTER `vp_enabled`,
+  ADD COLUMN `vp_price_snapshot` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '虚拟支付平台价格快照(分)' AFTER `vp_product_id`;
+
+ALTER TABLE `yoshop_payment_trade`
+  ADD COLUMN `platform` varchar(30) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '支付实现平台' AFTER `pay_method`,
+  ADD COLUMN `env` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '虚拟支付环境(0现网 1沙箱)' AFTER `prepay_id`,
+  ADD COLUMN `product_id` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '虚拟支付道具ID' AFTER `env`,
+  ADD COLUMN `goods_price` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '虚拟支付商品价格(分)' AFTER `product_id`,
+  ADD COLUMN `attach` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '虚拟支付透传字段' AFTER `goods_price`,
+  ADD COLUMN `notify_times` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '通知次数' AFTER `attach`,
+  ADD COLUMN `last_notify_time` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '最近通知时间' AFTER `notify_times`,
+  ADD COLUMN `payload_snapshot` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL COMMENT '虚拟支付请求快照' AFTER `last_notify_time`;
+
+ALTER TABLE `yoshop_user_oauth`
+  ADD COLUMN `session_key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '' COMMENT '微信小程序session_key' AFTER `oauth_id`;
