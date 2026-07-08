@@ -179,8 +179,40 @@ class Order extends BaseService
     public function syncVirtualRefunds(int $storeId): void
     {
         $results = (new RefundService())->syncVirtualRefunds($storeId);
-        Tools::taskLogs('Order', 'syncVirtualRefunds', [
+        $this->logVirtualRefundResults('Order', 'syncVirtualRefunds', $storeId, $results);
+    }
+
+    /**
+     * 高频补偿：收敛虚拟支付退款处理中状态
+     * @param int $storeId
+     * @return void
+     */
+    public function syncPendingVirtualRefunds(int $storeId): void
+    {
+        $results = (new RefundService())->syncPendingVirtualRefunds($storeId);
+        $this->logVirtualRefundResults('VirtualRefundCompensation', 'syncPendingVirtualRefunds', $storeId, $results);
+    }
+
+    /**
+     * 记录虚拟退款补偿结果，便于按 order_refund_id 追踪命中情况。
+     * @param string $taskKey
+     * @param string $method
+     * @param int $storeId
+     * @param array<int, array<string, mixed>> $results
+     * @return void
+     */
+    private function logVirtualRefundResults(string $taskKey, string $method, int $storeId, array $results): void
+    {
+        $orderRefundIds = [];
+        foreach ($results as $item) {
+            $orderRefundId = (int)($item['order_refund_id'] ?? 0);
+            if ($orderRefundId > 0) {
+                $orderRefundIds[] = $orderRefundId;
+            }
+        }
+        Tools::taskLogs($taskKey, $method, [
             'storeId' => $storeId,
+            'orderRefundIds' => helper::jsonEncode(array_values(array_unique($orderRefundIds))),
             'results' => helper::jsonEncode($results, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
     }

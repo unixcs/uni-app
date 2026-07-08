@@ -330,27 +330,12 @@ class Notify
         if ((int)($notifyParams['RetCode'] ?? -1) !== 0) {
             return;
         }
-        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)$tradeInfo['payload_snapshot']);
-        $orderRefundId = (int)($snapshot['virtual_refund']['order_refund_id'] ?? 0);
-        if ($orderRefundId <= 0) {
-            if (!empty($snapshot['virtual_refund']['duplicate_payment'])) {
-                PaymentTradeModel::mergePayloadSnapshot((int)$tradeInfo['trade_id'], [
-                    'virtual_refund' => [
-                        'status' => 'completed',
-                        'completed_at' => time(),
-                        'notify_payload' => $notifyParams,
-                    ],
-                ]);
-                PaymentTradeModel::updateToRefund((int)$tradeInfo['trade_id']);
-                return;
-            }
-            throwError('虚拟支付退款推送缺少本地退款单关联');
-        }
         $refundService = new OrderRefundService();
-        $result = $refundService->syncVirtualRefund($orderRefundId);
+        $result = $refundService->finalizeVirtualRefundByTrade((int)$tradeInfo['trade_id'], $notifyParams);
         if ((string)($result['status'] ?? '') !== 'completed') {
             $status = (string)($result['status'] ?? 'unknown');
-            throwError('虚拟支付退款通知待重试: ' . $status);
+            $message = (string)($result['message'] ?? '');
+            throwError('虚拟支付退款通知待重试: ' . $status . ($message !== '' ? (' - ' . $message) : ''));
         }
     }
 

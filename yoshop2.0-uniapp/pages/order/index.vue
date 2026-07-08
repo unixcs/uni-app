@@ -67,7 +67,8 @@
         curTab: 0,
         list: getEmptyPaginateObj(),
         upOption: { auto: true, page: { size: pageSize }, noMoreSize: 4, empty: { tip: '亲，暂无服务订单记录' } },
-        canReset: false
+        canReset: false,
+        hasShownOnce: false
       }
     },
     onLoad(options) {
@@ -75,7 +76,13 @@
       this.initCurTab()
       uni.$on('syncRefresh', canReset => { this.canReset = canReset })
     },
-    onShow() { this.canReset && this.onRefreshList(); this.canReset = false },
+    onShow() {
+      if (this.hasShownOnce) {
+        this.onRefreshList()
+      }
+      this.hasShownOnce = true
+      this.canReset = false
+    },
     onUnload() { uni.$off('syncRefresh') },
     methods: {
       hasPrimaryRefundState(item) {

@@ -19,6 +19,8 @@ return [
         'StoreTask' => [\app\timer\controller\Store::class],
         // 定时任务：商城订单
         'Order' => [\app\timer\controller\Order::class],
+        // 定时任务：虚拟退款高频补偿
+        'VirtualRefundCompensation' => [\app\timer\controller\VirtualRefundCompensation::class],
         // 定时任务：用户优惠券
         'UserCoupon' => [\app\timer\controller\UserCoupon::class],
         // 定时任务：会员等级

@@ -35,6 +35,8 @@ class Store extends BaseTimer
         foreach (StoreModel::getStoreIds() as $storeId) {
             // 定时任务：商城订单
             Event::trigger('Order', ['storeId' => $storeId]);
+            // 定时任务：虚拟退款高频补偿
+            Event::trigger('VirtualRefundCompensation', ['storeId' => $storeId]);
             // 定时任务：用户优惠券
             Event::trigger('UserCoupon', ['storeId' => $storeId]);
             // 定时任务：会员等级

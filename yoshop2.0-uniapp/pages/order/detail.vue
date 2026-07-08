@@ -79,7 +79,8 @@
         order: {},
         refundInfo: {},
         setting: {},
-        canReset: false
+        canReset: false,
+        hasShownOnce: false
       }
     },
     computed: {
@@ -139,7 +140,10 @@
     },
     onUnload() { uni.$off('syncRefresh') },
     onShow() {
-      this.canReset && this.getOrderDetail()
+      if (this.hasShownOnce) {
+        this.getOrderDetail()
+      }
+      this.hasShownOnce = true
       this.canReset = false
     },
     methods: {

@@ -15,6 +15,7 @@ namespace app\store\controller\order;
 use think\response\Json;
 use app\store\controller\Controller;
 use app\store\model\OrderRefund as OrderRefundModel;
+use app\common\service\order\Refund as OrderRefundService;
 
 /**
  * 售后管理
@@ -47,6 +48,21 @@ class Refund extends Controller
             return $this->renderError('未找到该售后单记录');
         }
         return $this->renderSuccess(compact('detail'));
+    }
+
+    /**
+     * 单笔同步虚拟退款状态（手动补偿入口）
+     * @param int $orderRefundId
+     * @return Json
+     */
+    public function sync(int $orderRefundId): Json
+    {
+        $model = new OrderRefundModel;
+        if (!$detail = $model->getDetail($orderRefundId)) {
+            return $this->renderError('未找到该售后单记录');
+        }
+        $result = (new OrderRefundService())->syncVirtualRefund($orderRefundId);
+        return $this->renderSuccess(compact('result', 'detail'));
     }
 
     /**

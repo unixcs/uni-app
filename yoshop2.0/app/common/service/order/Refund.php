@@ -286,13 +286,17 @@ class Refund extends BaseService
      */
     public function syncVirtualRefunds(int $storeId): array
     {
-        $refundList = (new OrderRefundModel)
-            ->where('store_id', '=', $storeId)
-            ->where('type', '=', RefundTypeEnum::SERVICE)
-            ->where('status', '=', RefundStatusEnum::NORMAL)
-            ->where('audit_status', '=', RefundAuditStatusEnum::REVIEWED)
-            ->order(['order_refund_id' => 'asc'])
-            ->select();
+        return array_merge($this->syncPendingVirtualRefunds($storeId), $this->syncTradeOnlyVirtualRefunds($storeId));
+    }
+
+    /**
+     * 高频补偿：只收敛 reviewed+normal 的虚拟支付服务退款单。
+     * @param int $storeId
+     * @return array<int, array<string, mixed>>
+     */
+    public function syncPendingVirtualRefunds(int $storeId): array
+    {
+        $refundList = $this->getPendingVirtualRefundList($storeId);
         $result = [];
         foreach ($refundList as $refund) {
             try {
@@ -305,7 +309,31 @@ class Refund extends BaseService
                 ];
             }
         }
-        return array_merge($result, $this->syncTradeOnlyVirtualRefunds($storeId));
+        return $result;
+    }
+
+    /**
+     * 获取待收敛的虚拟支付服务退款单列表。
+     * 仅处理 wechat_virtual + 服务退款 + reviewed + normal，避免高频任务扫描无关退款单。
+     * @param int $storeId
+     * @return \think\Collection
+     */
+    private function getPendingVirtualRefundList(int $storeId)
+    {
+        return (new OrderRefundModel)
+            ->alias('refund')
+            ->field(['refund.order_refund_id'])
+            ->where('refund.store_id', '=', $storeId)
+            ->where('refund.type', '=', RefundTypeEnum::SERVICE)
+            ->where('refund.status', '=', RefundStatusEnum::NORMAL)
+            ->where('refund.audit_status', '=', RefundAuditStatusEnum::REVIEWED)
+            ->whereExists(function ($query) {
+                $query->name('payment_trade')
+                    ->whereRaw('order_id = `refund`.order_id')
+                    ->where('platform', '=', 'wechat_virtual');
+            })
+            ->order(['refund.order_refund_id' => 'asc'])
+            ->select();
     }
 
     /**
@@ -348,6 +376,110 @@ class Refund extends BaseService
             'trade_id' => (int)$tradeInfo['trade_id'],
             'status' => 'completed',
             'virtual_status' => $status,
+        ];
+    }
+
+    /**
+     * 收到退款成功通知后，按交易记录直接收口本地退款状态。
+     * 主链路优先信任已验签的退款成功事件，避免再次查单导致卡在处理中。
+     * @param int $tradeId
+     * @param array $notifyParams
+     * @return array<string, mixed>
+     */
+    public function finalizeVirtualRefundByTrade(int $tradeId, array $notifyParams = []): array
+    {
+        $tradeInfo = PaymentTradeModel::detail($tradeId);
+        if (empty($tradeInfo)) {
+            return ['trade_id' => $tradeId, 'status' => 'missing_trade'];
+        }
+        if ((string)($tradeInfo['platform'] ?? '') !== 'wechat_virtual') {
+            return ['trade_id' => $tradeId, 'status' => 'not_virtual'];
+        }
+
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeInfo['payload_snapshot'] ?? ''));
+        $virtualRefund = (array)($snapshot['virtual_refund'] ?? []);
+        $isDuplicatePayment = !empty($virtualRefund['duplicate_payment']);
+        PaymentTradeModel::mergePayloadSnapshot($tradeId, [
+            'virtual_refund' => [
+                'notify_received_at' => time(),
+                'notify_payload' => $notifyParams,
+            ],
+        ]);
+
+        if ($isDuplicatePayment) {
+            return $this->finalizeTradeOnlyVirtualRefundFromNotify($tradeInfo, $notifyParams);
+        }
+
+        $order = OrderModel::detail((int)$tradeInfo['order_id'], ['goods', 'trade']);
+        if (empty($order)) {
+            return [
+                'trade_id' => $tradeId,
+                'order_id' => (int)$tradeInfo['order_id'],
+                'status' => 'missing_order',
+            ];
+        }
+
+        $refundResolution = $this->resolveRefundForVirtualTradeNotify($tradeInfo, $snapshot);
+        $refund = $refundResolution['refund'] ?? null;
+        if (empty($refund)) {
+            return [
+                'trade_id' => $tradeId,
+                'order_id' => (int)$order['order_id'],
+                'status' => (string)($refundResolution['status'] ?? 'pending_refund_binding'),
+                'message' => (string)($refundResolution['message'] ?? ''),
+            ];
+        }
+
+        if (!empty($refundResolution['bound_order_refund_id'])) {
+            PaymentTradeModel::mergePayloadSnapshot($tradeId, [
+                'virtual_refund' => [
+                    'order_refund_id' => (int)$refundResolution['bound_order_refund_id'],
+                    'bound_from_notify_at' => time(),
+                ],
+            ]);
+        }
+
+        if ((int)$refund['status'] === RefundStatusEnum::COMPLETED) {
+            PaymentTradeModel::mergePayloadSnapshot($tradeId, [
+                'virtual_refund' => [
+                    'status' => 'completed',
+                    'completed_at' => time(),
+                    'source' => 'refund_notify',
+                ],
+            ]);
+            $this->updateTradeState((int)$tradeInfo['trade_id']);
+            return [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_refund_id' => (int)$refund['order_refund_id'],
+                'status' => 'completed',
+                'mode' => 'already_completed',
+            ];
+        }
+
+        if ((int)$refund['status'] !== RefundStatusEnum::NORMAL
+            || (int)$refund['audit_status'] !== RefundAuditStatusEnum::REVIEWED) {
+            return [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_refund_id' => (int)$refund['order_refund_id'],
+                'status' => 'pending_refund_ready',
+                'refund_status' => (int)$refund['status'],
+                'audit_status' => (int)$refund['audit_status'],
+            ];
+        }
+
+        $this->finalizeVirtualRefund($order, $refund, $tradeInfo, [
+            'status' => self::VIRTUAL_ORDER_STATUS_REFUNDED,
+            'source' => 'refund_notify',
+            'notify_payload' => $notifyParams,
+        ]);
+        return [
+            'trade_id' => (int)$tradeInfo['trade_id'],
+            'order_id' => (int)$order['order_id'],
+            'order_refund_id' => (int)$refund['order_refund_id'],
+            'status' => 'completed',
+            'mode' => 'refund_notify',
         ];
     }
 
@@ -435,6 +567,15 @@ class Refund extends BaseService
             if (empty($lockedTrade) || (string)($lockedTrade['platform'] ?? '') !== 'wechat_virtual') {
                 throwError('退款收敛失败，交易记录不存在或不是虚拟支付');
             }
+            if ((int)$lockedRefund['order_id'] !== (int)$lockedOrder['order_id']) {
+                throwError('退款收敛失败，退款单与订单不匹配');
+            }
+            if ((int)$lockedRefund['type'] !== RefundTypeEnum::SERVICE) {
+                throwError('退款收敛失败，当前退款单不是服务退款单');
+            }
+            if ((int)$lockedTrade['order_id'] !== (int)$lockedOrder['order_id']) {
+                throwError('退款收敛失败，交易记录与订单不匹配');
+            }
             if ((int)$lockedRefund['status'] === RefundStatusEnum::COMPLETED) {
                 return;
             }
@@ -474,6 +615,96 @@ class Refund extends BaseService
                 throwError('更新退款交易状态失败');
             }
         });
+    }
+
+
+    /**
+     * 尝试为退款成功通知解析唯一的服务退款单。
+     * 规则：优先吃快照里的 order_refund_id；拿不到时，只在当前订单恰好只有一笔 reviewed+normal 服务退款时兜底绑定。
+     * @param PaymentTradeModel $tradeInfo
+     * @param array $snapshot
+     * @return array{status:string,message?:string,refund?:mixed,bound_order_refund_id?:int}
+     */
+    private function resolveRefundForVirtualTradeNotify(PaymentTradeModel $tradeInfo, array $snapshot): array
+    {
+        $boundRefundId = (int)(($snapshot['virtual_refund']['order_refund_id'] ?? 0));
+        if ($boundRefundId > 0) {
+            $refund = OrderRefundModel::detail($boundRefundId);
+            if (!empty($refund)) {
+                if ((int)$refund['order_id'] !== (int)$tradeInfo['order_id']) {
+                    return [
+                        'status' => 'invalid_bound_refund',
+                        'message' => '快照中的退款单不属于当前订单',
+                    ];
+                }
+                if ((int)$refund['type'] !== RefundTypeEnum::SERVICE) {
+                    return [
+                        'status' => 'invalid_bound_refund',
+                        'message' => '快照中的退款单不是服务退款单',
+                    ];
+                }
+                return [
+                    'status' => 'resolved',
+                    'refund' => $refund,
+                ];
+            }
+            return [
+                'status' => 'missing_bound_refund',
+                'message' => '快照中的退款单不存在',
+            ];
+        }
+
+        $candidates = (new OrderRefundModel)
+            ->where('order_id', '=', (int)$tradeInfo['order_id'])
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('audit_status', '=', RefundAuditStatusEnum::REVIEWED)
+            ->where('status', '=', RefundStatusEnum::NORMAL)
+            ->order(['order_refund_id' => 'asc'])
+            ->select();
+        $count = $candidates->count();
+        if ($count === 1) {
+            $refund = $candidates[0];
+            return [
+                'status' => 'resolved',
+                'refund' => $refund,
+                'bound_order_refund_id' => (int)$refund['order_refund_id'],
+            ];
+        }
+        if ($count < 1) {
+            return [
+                'status' => 'pending_refund_binding',
+                'message' => '当前订单尚未出现可收口的服务退款单',
+            ];
+        }
+        return [
+            'status' => 'ambiguous_refund_binding',
+            'message' => '当前订单存在多笔可候选的服务退款单，拒绝猜测绑定',
+        ];
+    }
+
+    /**
+     * 直接根据退款成功通知完成重复支付输家交易的退款收口。
+     * @param PaymentTradeModel $tradeInfo
+     * @param array $notifyParams
+     * @return array<string, mixed>
+     */
+    private function finalizeTradeOnlyVirtualRefundFromNotify(PaymentTradeModel $tradeInfo, array $notifyParams = []): array
+    {
+        PaymentTradeModel::mergePayloadSnapshot((int)$tradeInfo['trade_id'], [
+            'virtual_refund' => [
+                'status' => 'completed',
+                'completed_at' => time(),
+                'source' => 'refund_notify',
+                'notify_payload' => $notifyParams,
+            ],
+        ]);
+        $this->updateTradeState((int)$tradeInfo['trade_id']);
+        return [
+            'trade_id' => (int)$tradeInfo['trade_id'],
+            'order_id' => (int)$tradeInfo['order_id'],
+            'status' => 'completed',
+            'mode' => 'duplicate_payment',
+        ];
     }
 
     /**

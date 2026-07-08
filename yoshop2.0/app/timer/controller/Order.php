@@ -27,7 +27,7 @@ class Order extends BaseTimer
     protected string $taskKey = 'Order';
 
     // 任务执行间隔时长 (单位:秒)
-    protected int $taskExpire = 60 * 30;
+    protected int $taskExpire = 60 * 10;
 
     /**
      * 任务处理

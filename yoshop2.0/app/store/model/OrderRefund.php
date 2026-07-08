@@ -44,7 +44,9 @@ class OrderRefund extends OrderRefundModel
      */
     private static function queryForStore()
     {
-        return (new static)->where('store_id', '=', (int)static::$storeId);
+        return (new static)
+            ->alias('refund')
+            ->where('refund.store_id', '=', (int)static::$storeId);
     }
 
     /**
@@ -94,7 +96,6 @@ class OrderRefund extends OrderRefundModel
     public static function detailForStore(int $orderRefundId, array $with = [])
     {
         return static::queryForStore()
-            ->alias('refund')
             ->field('refund.*')
             ->join('order', 'order.order_id = refund.order_id')
             ->where('order.is_delete', '=', 0)
