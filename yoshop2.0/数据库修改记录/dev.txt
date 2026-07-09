@@ -30,3 +30,6 @@ INSERT INTO `yoshop_store_menu_api` VALUES ('11937', '10312', '11111', '17516373
 
 UPDATE `yoshop_store_menu` SET `name`='充值订单' WHERE (`menu_id`='10070');
 UPDATE `yoshop_store_api` SET `name`='充值订单' WHERE (`api_id`='11103');
+
+ALTER TABLE `yoshop_goods`
+ADD COLUMN `vp_product_name` varchar(100) NOT NULL DEFAULT '' COMMENT '虚拟支付道具名称(镜像字段)' AFTER `vp_product_id`;

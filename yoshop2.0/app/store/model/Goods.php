@@ -23,6 +23,7 @@ use app\store\model\GoodsCategoryRel as GoodsCategoryRelModel;
 use app\store\service\Goods as GoodsService;
 use app\common\enum\goods\SpecType as GoodsSpecTypeEnum;
 use app\common\enum\goods\Status as GoodsStatusEnum;
+use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
 use cores\exception\BaseException;
 
 /**
@@ -32,6 +33,8 @@ use cores\exception\BaseException;
  */
 class Goods extends GoodsModel
 {
+    private const VP_PRODUCT_PREFIX = 'vip';
+
     /**
      * 获取商品详情
      * @param int $goodsId
@@ -207,6 +210,7 @@ class Goods extends GoodsModel
             'store_id' => self::$storeId,
             'vp_enabled' => isset($data['vp_enabled']) ? (int)$data['vp_enabled'] : 0,
             'vp_product_id' => trim((string)($data['vp_product_id'] ?? '')),
+            'vp_product_name' => trim((string)($data['vp_product_name'] ?? '')),
             'vp_price_snapshot' => isset($data['vp_price_snapshot']) ? (int)$data['vp_price_snapshot'] : 0,
         ]);
         // 整理商品的价格和库存总量
@@ -249,7 +253,7 @@ class Goods extends GoodsModel
     }
 
     /**
-     * 校验虚拟支付配置
+     * 校验并收口虚拟支付配置
      * @param array $data
      * @return void
      * @throws BaseException
@@ -258,27 +262,91 @@ class Goods extends GoodsModel
     {
         if ((int)$data['vp_enabled'] !== 1) {
             $data['vp_product_id'] = '';
+            $data['vp_product_name'] = '';
             $data['vp_price_snapshot'] = 0;
             return;
         }
         if ($data['spec_type'] != GoodsSpecTypeEnum::SINGLE) {
             throwError('启用虚拟支付的商品仅支持单规格');
         }
-        if (!GoodsModel::isServicePackageGoodsData($data)) {
-            throwError('仅服务商品可启用虚拟支付');
+        if (!GoodsModel::isServicePackageGoodsData($this->buildVirtualPaymentValidationContext($data))) {
+            throwError('仅单规格且无需配送的服务商品可启用虚拟支付');
         }
-        if ($data['vp_product_id'] === '') {
-            throwError('请填写虚拟支付 productId');
+        $virtualPaymentConfig = $this->buildVirtualPaymentConfigByGoodsPrice($data['goods_price'] ?? 0);
+        $data['vp_product_id'] = $virtualPaymentConfig['vp_product_id'];
+        $data['vp_product_name'] = $virtualPaymentConfig['vp_product_name'];
+        $data['vp_price_snapshot'] = $virtualPaymentConfig['vp_price_snapshot'];
+    }
+
+    /**
+     * 构建虚拟支付校验上下文
+     *
+     * 商家后台当前商品页不会提交 delivery_type，历史商品数据库里也存在空值。
+     * 这里按后端既有 accessor 语义补齐校验所需上下文，避免把规则 owner 下沉到前端。
+     *
+     * @param array $data
+     * @return array
+     */
+    private function buildVirtualPaymentValidationContext(array $data): array
+    {
+        $context = $data;
+        if (!array_key_exists('delivery_type', $context) || $context['delivery_type'] === '' || $context['delivery_type'] === null) {
+            $context['delivery_type'] = $this->resolveVirtualPaymentDeliveryTypes();
         }
-        $goodsPriceFen = (int)round((float)$data['goods_price'] * 100);
+        if (!array_key_exists('serviceIds', $context) && !array_key_exists('service_ids', $context) && !empty($this['goods_id'])) {
+            $context['serviceIds'] = GoodsServiceRelModel::getServiceIds((int)$this['goods_id']);
+        }
+        return $context;
+    }
+
+    /**
+     * 解析虚拟支付校验所需的配送方式
+     *
+     * 优先复用当前商品 accessor 的既有默认语义；新增商品沿用系统默认配送方式集合。
+     *
+     * @return array<int, int>
+     */
+    private function resolveVirtualPaymentDeliveryTypes(): array
+    {
+        if (!empty($this['goods_id'])) {
+            return array_values((array)$this['delivery_type']);
+        }
+        return array_keys(DeliveryTypeEnum::data());
+    }
+
+    /**
+     * 根据商品价格推导虚拟支付配置
+     * @param mixed $goodsPrice
+     * @return array<string, int|string>
+     * @throws BaseException
+     */
+    private function buildVirtualPaymentConfigByGoodsPrice($goodsPrice): array
+    {
+        $goodsPriceFen = $this->normalizeVirtualPaymentGoodsPriceFen($goodsPrice);
         if ($goodsPriceFen <= 0) {
             throwError('虚拟支付商品价格必须大于0');
         }
-        if ((int)$data['vp_price_snapshot'] <= 0) {
-            throwError('请填写平台价格快照');
+        if ($goodsPriceFen >= 100 && $goodsPriceFen % 100 !== 0) {
+            throwError('启用虚拟支付时，1元及以上的商品价格必须为整数');
         }
-        if ($goodsPriceFen !== (int)$data['vp_price_snapshot']) {
-            throwError('商品售价必须与平台价格快照一致');
-        }
+        $suffix = $goodsPriceFen >= 100
+            ? (string)intval($goodsPriceFen / 100)
+            : str_pad((string)$goodsPriceFen, 3, '0', STR_PAD_LEFT);
+        $productId = self::VP_PRODUCT_PREFIX . $suffix;
+        return [
+            'vp_product_id' => $productId,
+            'vp_product_name' => $productId,
+            'vp_price_snapshot' => $goodsPriceFen,
+        ];
+    }
+
+    /**
+     * 规范化虚拟支付商品价格（分）
+     * @param mixed $goodsPrice
+     * @return int
+     */
+    private function normalizeVirtualPaymentGoodsPriceFen($goodsPrice): int
+    {
+        return (int)round((float)$goodsPrice * 100);
     }
 }

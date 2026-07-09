@@ -73,10 +73,10 @@ export default {
       'status', 'spec_type', 'deduct_stock_type', 'is_restrict', 'content',
       'selling_point', 'serviceIds', 'sales_initial', 'is_points_gift',
       'is_points_discount', 'is_enable_grade', 'is_alone_grade',
-      'vp_enabled', 'vp_product_id', 'vp_price_snapshot'
+      'vp_enabled', 'vp_product_id', 'vp_product_name', 'vp_price_snapshot'
     ])
     return {
-      ...goodsFormData,
+      ...goodsFormData
     }
   },
 
@@ -85,12 +85,12 @@ export default {
     const goodsInfo = this.formData.goods
     let goodsFormData = {}
     // 单规格数据
-    if (goodsInfo.spec_type == 10) {
+    if (goodsInfo.spec_type === 10) {
       const skuOne = _.pick(goodsInfo.skuList[0], ['goods_price', 'line_price', 'stock_num'])
       goodsFormData = { ...goodsFormData, ...skuOne }
     }
     // 服务套餐限购数据
-    if (goodsInfo.is_restrict == 1) {
+    if (goodsInfo.is_restrict === 1) {
       goodsFormData['restrict_total'] = goodsInfo['restrict_total']
       goodsFormData['restrict_single'] = goodsInfo['restrict_single']
     }

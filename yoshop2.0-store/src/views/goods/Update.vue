@@ -106,7 +106,8 @@
                 <a-input-number
                   :min="0.01"
                   :precision="2"
-                  v-decorator="['goods_price', { rules: [{ required: true, message: '请输入服务价格' }] }]"
+                  @change="onGoodsPriceChange"
+                  v-decorator="['goods_price', { rules: [{ required: true, message: '请输入服务价格' }, { validator: validateVirtualPaymentGoodsPrice }] }]"
                 />
                 <span class="ml-10">元</span>
               </a-form-item>
@@ -313,8 +314,8 @@
                       addonAfter="折"
                       :inputProps="{ min: 0, max: 9.9 }"
                       v-decorator="[`alone_grade_equity[grade_id:${item.grade_id}]`, {
-                      initialValue: formData.defaultUserGradeValue[item.grade_id], rules: [{ required: true, message: '折扣率不能为空'}]
-                    }]"
+                        initialValue: formData.defaultUserGradeValue[item.grade_id], rules: [{ required: true, message: '折扣率不能为空'}]
+                      }]"
                     />
                   </a-form-item>
                 </div>
@@ -337,7 +338,7 @@
             >
               <a-radio-group
                 v-decorator="['vp_enabled', { initialValue: 0, rules: [{ required: true }] }]"
-                @change="onForceUpdate(true)"
+                @change="onVirtualPaymentEnabledChange"
               >
                 <a-radio :value="0">关闭</a-radio>
                 <a-radio :value="1">开启</a-radio>
@@ -348,24 +349,40 @@
                 label="虚拟支付 productId"
                 :labelCol="labelCol"
                 :wrapperCol="wrapperCol"
-                extra="填写微信虚拟支付后台已发布的道具ID"
+                extra="填写微信虚拟支付后台已发布的道具ID；最终以后端按商品价格推导结果为准"
               >
                 <a-input
                   placeholder="例如：vip99"
-                  v-decorator="['vp_product_id', { rules: [{ required: true, message: '请输入虚拟支付 productId' }] }]"
+                  @change="onVirtualPaymentManualChange"
+                  v-decorator="['vp_product_id', { rules: [{ required: true, message: '请输入虚拟支付 productId' }, { validator: validateVirtualPaymentProductId }] }]"
+                />
+              </a-form-item>
+              <a-form-item
+                label="虚拟支付道具名称"
+                :labelCol="labelCol"
+                :wrapperCol="wrapperCol"
+                extra="镜像字段，仅用于后台回显和运营识别，不进入支付核心逻辑"
+              >
+                <a-input
+                  placeholder="例如：vip99"
+                  @change="onVirtualPaymentManualChange"
+                  v-decorator="['vp_product_name', { rules: [{ required: true, message: '请输入虚拟支付道具名称' }, { validator: validateVirtualPaymentProductName }] }]"
                 />
               </a-form-item>
               <a-form-item
                 label="平台价格快照"
                 :labelCol="labelCol"
                 :wrapperCol="wrapperCol"
-                extra="单位为分，必须与服务价格完全一致，例如 9.90 元填写 990"
+                extra="单位为分，只读展示，始终与商品价格联动"
               >
                 <a-input-number
-                  :min="1"
+                  :min="0"
                   :precision="0"
-                  v-decorator="['vp_price_snapshot', { rules: [{ required: true, message: '请输入平台价格快照' }] }]"
+                  disabled
+                  v-decorator="['vp_price_snapshot', { rules: [{ required: true, message: '请输入平台价格快照' }, { validator: validateVirtualPaymentPriceSnapshot }] }]"
                 />
+                <span class="ml-10 form-note">{{ getVirtualPaymentModeText() }}</span>
+                <a-button class="ml-10" size="small" @click="onRegenerateVirtualPaymentConfig">按价格重算</a-button>
               </a-form-item>
             </template>
           </div>
@@ -383,9 +400,11 @@ import * as GoodsApi from '@/api/goods'
 import { SelectImage, SelectVideo, Ueditor, InputNumberGroup } from '@/components'
 import GoodsModel from '@/common/model/goods/Index'
 import { GoodsType, MultiSpec } from './modules'
+import virtualPaymentFormMixin from './modules/virtualPaymentFormMixin'
 import { isEmptyObject } from '@/utils/util'
 
 export default {
+  mixins: [virtualPaymentFormMixin],
   components: {
     GoodsType,
     SelectImage,
@@ -439,6 +458,9 @@ export default {
             this.$nextTick(() => {
               this.form.setFieldsValue(GoodsModel.getFieldsValue2())
               this.onForceUpdate()
+              this.$nextTick(() => {
+                this.initVirtualPaymentState()
+              })
             })
           }
           this.isLoading = false
@@ -514,7 +536,7 @@ export default {
         ['goods_type', 'goods_name', 'categorys', 'imagesIds', 'goods_no', 'status', 'sort'],
         ['spec_type', 'goods_price', 'stock_num', 'is_restrict', 'restrict_total', 'restrict_single'],
         ['content'],
-        ['alone_grade_equity', 'first_money', 'second_money', 'third_money', 'vp_product_id', 'vp_price_snapshot']
+        ['alone_grade_equity', 'first_money', 'second_money', 'third_money', 'vp_product_id', 'vp_product_name', 'vp_price_snapshot']
       ]
       const field = Object.keys(errors).shift()
       for (const key in tabsFieldsMap) {
@@ -541,7 +563,7 @@ export default {
         .catch(() => {
           this.isBtnLoading = false
         })
-        .finally(() => this.isLoading = false)
+        .finally(() => { this.isLoading = false })
     }
 
   }
