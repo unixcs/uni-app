@@ -272,3 +272,38 @@ Closed the feedback/complaint MVP and homepage popup/privacy singleton content t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 收口工作区清理与 Trellis bootstrap 任务
+
+**Date**: 2026-07-10
+**Task**: 收口工作区清理与 Trellis bootstrap 任务
+**Branch**: `main`
+
+### Summary
+
+完成工作区脏文件清理、补齐 Trellis 前端规范、归档 bootstrap 任务并准备推送 GitHub。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3004481` | (see git log) |
+| `9611eaf` | (see git log) |
+| `8c0e8c3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
