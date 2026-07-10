@@ -1,0 +1,9 @@
+{
+  "name": "yoshop-trellis",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local install of Trellis AI coding framework for the yoshop project",
+  "dependencies": {
+    "@mindfoldhq/trellis": "^0.6.5"
+  }
+}
