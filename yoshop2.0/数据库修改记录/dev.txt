@@ -33,3 +33,43 @@ UPDATE `yoshop_store_api` SET `name`='充值订单' WHERE (`api_id`='11103');
 
 ALTER TABLE `yoshop_goods`
 ADD COLUMN `vp_product_name` varchar(100) NOT NULL DEFAULT '' COMMENT '虚拟支付道具名称(镜像字段)' AFTER `vp_product_id`;
+
+ALTER TABLE `yoshop_user`
+ADD COLUMN `first_login_popup_seen_time` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '首页首登业务弹窗已展示时间' AFTER `nick_name`;
+
+CREATE TABLE `yoshop_user_feedback` (
+  `feedback_id` int(11) unsigned NOT NULL AUTO_INCREMENT COMMENT '反馈ID',
+  `user_id` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '用户ID',
+  `store_id` int(11) unsigned NOT NULL DEFAULT '0' COMMENT '商城ID',
+  `issue_type` tinyint(3) unsigned NOT NULL DEFAULT '10' COMMENT '问题类型(10建议 20异常 30体验 40订单 50其他 60投诉)',
+  `status` tinyint(3) unsigned NOT NULL DEFAULT '10' COMMENT '处理状态(10待处理 20处理中 30已回复 40已关闭)',
+  `content` text NOT NULL COMMENT '反馈内容',
+  `mobile` varchar(20) NOT NULL DEFAULT '' COMMENT '联系方式',
+  `image_ids` text NULL COMMENT '图片file_id JSON数组',
+  `reply_content` text NULL COMMENT '官方回复',
+  `reply_time` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '回复时间',
+  `is_delete` tinyint(3) unsigned NOT NULL DEFAULT '0' COMMENT '是否软删除',
+  `create_time` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '创建时间',
+  `update_time` int(10) unsigned NOT NULL DEFAULT '0' COMMENT '更新时间',
+  PRIMARY KEY (`feedback_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_store_status_issue` (`store_id`,`status`,`issue_type`),
+  KEY `idx_create_time` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户反馈投诉表';
+
+INSERT INTO `yoshop_store_menu` VALUES ('10320', '10', '反馈/投诉', '/content/feedback/index', '1', 'content-feedback', '', '10072', '115', '1783569600', '1783569600');
+INSERT INTO `yoshop_store_menu` VALUES ('10321', '20', '处理', '', '1', '', 'edit', '10320', '100', '1783569600', '1783569600');
+
+INSERT INTO `yoshop_store_api` VALUES ('11334', '反馈投诉', '-', '11105', '115', '1783569600', '1783569600');
+INSERT INTO `yoshop_store_api` VALUES ('11335', '反馈列表', '/content.feedback/list', '11334', '100', '1783569600', '1783569600');
+INSERT INTO `yoshop_store_api` VALUES ('11336', '反馈详情', '/content.feedback/detail', '11334', '105', '1783569600', '1783569600');
+INSERT INTO `yoshop_store_api` VALUES ('11337', '处理反馈', '/content.feedback/edit', '11334', '110', '1783569600', '1783569600');
+
+INSERT INTO `yoshop_store_menu_api` VALUES ('11938', '10320', '11335', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11939', '10320', '11334', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11940', '10320', '11105', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11941', '10321', '11336', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11942', '10321', '11337', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11943', '10321', '11334', '1783569600');
+INSERT INTO `yoshop_store_menu_api` VALUES ('11944', '10321', '11105', '1783569600');
+

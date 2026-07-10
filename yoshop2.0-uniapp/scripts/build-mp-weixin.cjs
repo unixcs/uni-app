@@ -16,6 +16,8 @@ const compileTargets = [
   path.join(compiledRoot, 'core', 'payment', 'wechat.js'),
   path.join(compiledRoot, 'pages', 'checkout', 'cashier', 'index.js'),
 ]
+const staticSourceRoot = path.join(mirrorRoot, 'static')
+const staticCompiledRoot = path.join(compiledRoot, 'static')
 
 function run(command, args, cwd) {
   const result = spawnSync(command, args, {
@@ -27,6 +29,22 @@ function run(command, args, cwd) {
   if (result.status !== 0) {
     process.exit(result.status || 1)
   }
+}
+
+function syncCompiledStaticAssets() {
+  if (!fs.existsSync(staticSourceRoot)) {
+    throw new Error(`[build-mp-weixin] Missing source static directory: ${staticSourceRoot}`)
+  }
+
+  fs.mkdirSync(compiledRoot, { recursive: true })
+  console.log('[build-mp-weixin] Syncing static assets into compiled mp-weixin output...')
+  run('rsync', [
+    '-a',
+    '--delete',
+    '--exclude', 'app-plus',
+    `${staticSourceRoot}/`,
+    `${staticCompiledRoot}/`,
+  ], '/opt/yoshop')
 }
 
 function withTemporaryApiUrlOverride(fn) {
@@ -188,7 +206,8 @@ withTemporaryApiUrlOverride(async () => {
   const workdir = '/opt/yoshop'
   console.log('[build-mp-weixin] Launching HBuilderX compile and waiting for compiled artifacts to refresh...')
   process.chdir(workdir)
-  return launchCompileAndWait()
+  await launchCompileAndWait()
+  syncCompiledStaticAssets()
 }).then(() => {
   const outputDir = path.win32.join('D:\\Program\\0\\home\\0\\yoshop1\\yoshop2.0-uniapp\\unpackage\\dist\\dev\\mp-weixin')
   console.log(`[build-mp-weixin] Compile finished. Output: ${outputDir}`)

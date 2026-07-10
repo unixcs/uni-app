@@ -13,3 +13,5 @@ Agent.md
 /.workbuddy/
 /runtime/
 /tmp/
+/node_modules/
+/.opencode/
