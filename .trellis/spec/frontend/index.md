@@ -21,6 +21,9 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
 | [Goods Form Contracts](./goods-form-contracts.md) | Merchant goods create/edit cross-layer contracts | Active |
+| [Wxapp Singleton Content Contracts](./wxapp-singleton-content-contracts.md) | Wxapp singleton-content config, popup consume, and privacy-agreement contracts | Active |
+| [Service Order Contracts](./service-order-contracts.md) | Shared checkout service-order contract, admin search semantics, and historical soft-delete-hide boundaries | Active |
+| [Feedback Complaint Contracts](./feedback-complaint-contracts.md) | Miniapp feedback upload path normalization and merchant content-editor placement contracts | Active |
 
 ---
 

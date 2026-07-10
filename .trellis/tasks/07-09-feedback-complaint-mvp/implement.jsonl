@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/07-09-feedback-complaint-mvp/prd.md","reason":"确认反馈/投诉 MVP 范围，仅交付单向工单流程，不扩展为 IM/通知中心。"}
+{"file":".trellis/tasks/07-09-feedback-complaint-mvp/design.md","reason":"对齐前后台数据流、处理状态与图片上传复用策略。"}
+{"file":".trellis/tasks/07-09-feedback-complaint-mvp/implement.md","reason":"记录本轮实施范围、验证动作与待人工验收项。"}
+{"file":".trellis/spec/frontend/feedback-complaint-contracts.md","reason":"沉淀微信端媒体选择对象必须同时兼容 path/tempFilePath 的上传契约。"}
+{"file":".trellis/spec/frontend/wxapp-singleton-content-contracts.md","reason":"对齐首页首登弹窗与隐私协议在商家后台的内容编辑落位约定。"}
