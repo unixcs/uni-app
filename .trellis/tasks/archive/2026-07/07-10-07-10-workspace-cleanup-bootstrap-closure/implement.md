@@ -21,13 +21,13 @@
 ### 2.3 Verification
 - [x] Re-run focused validation for any retained functional cleanup changes.
 - [x] Confirm no placeholder text remains in bootstrap guideline files.
-- [ ] Confirm `git status` is explainable before Phase 3.4 commit planning.
+- [x] Confirm `git status` is explainable before Phase 3.4 commit planning.
 
 ## Phase 3 — Finish
-- [ ] Prepare commit plan for all AI-edited files from this task.
-- [ ] Commit approved work in logical batches.
-- [ ] Archive `00-bootstrap-guidelines` if complete.
-- [ ] Archive this cleanup task.
+- [x] Prepare commit plan for all AI-edited files from this task.
+- [x] Commit approved work in logical batches.
+- [x] Archive `00-bootstrap-guidelines` if complete.
+- [x] Archive this cleanup task.
 - [ ] Record journal and push committed history to `origin`.
 
 ## Validation commands
@@ -50,3 +50,9 @@
 - Kept `yoshop2.0/数据库修改记录/dev.txt` as a real project change-log artifact for shipped schema/menu work.
 - Added root ignore rules for local-only `node_modules/` and `.opencode/`.
 - Replaced Trellis bootstrap placeholder docs with repo-backed frontend guidance and updated `00-bootstrap-guidelines/prd.md` to record completion evidence.
+
+- `git status --short` became fully explainable after grouping the remaining edits into Trellis/bootstrap/spec commits and project context/docs commits.
+- Work commits created in this closure round: `3004481` (mp-weixin static asset sync + cleanup), `9611eaf` (Trellis scaffold + frontend spec), `8c0e8c3` (project context/docs).
+- Archived bootstrap task manually with Chinese commit `50d82df` after validating the filled guideline set.
+- Recorded workspace journal as Session 6 via `34ff2a8` using the work commits above.
+- Final remaining external step after task archive is pushing the complete local history to `origin/main`.
