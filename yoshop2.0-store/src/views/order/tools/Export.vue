@@ -117,6 +117,10 @@ const columnData = filterModules([
   { label: '下单时间', value: 'create_time' },
   { label: '买家信息', value: 'user_info' },
   { label: '买家留言', value: 'buyer_remark' },
+  { label: '游戏平台', value: 'game_platform' },
+  { label: '游戏ID', value: 'game_account_id' },
+  { label: '联系方式', value: 'contact_mobile' },
+  { label: '成年人下单确认', value: 'adult_confirm' },
   { label: '配送方式', value: 'delivery_type' },
   { label: '收货人', value: 'receipt_name' },
   { label: '联系电话', value: 'receipt_phone' },
@@ -131,35 +135,39 @@ const columnData = filterModules([
   { label: '是否已评价', value: 'is_comment' },
   { label: '订单来源', value: 'order_source' },
   { label: '第三方支付订单号', value: 'out_trade_no' },
-  { label: '支付流水号', value: 'trade_no' },
+  { label: '支付流水号', value: 'trade_no' }
 ])
 
 // 默认选中的字段
 const columnValue = [
-  'order_no'
-  , 'goods_detail'
-  , 'total_price'
-  , 'coupon_money'
-  , 'points_money'
-  , 'update_price'
-  , 'express_price'
-  , 'pay_price'
-  , 'pay_method'
-  , 'create_time'
-  , 'user_info'
-  , 'buyer_remark'
-  , 'delivery_type'
-  , 'receipt_name'
-  , 'receipt_phone'
-  , 'receipt_address'
-  , 'pay_status'
-  , 'pay_time'
-  , 'delivery_status'
-  , 'delivery_time'
-  , 'receipt_status'
-  , 'receipt_time'
-  , 'order_status'
-  , 'order_source'
+  'order_no',
+  'goods_detail',
+  'total_price',
+  'coupon_money',
+  'points_money',
+  'update_price',
+  'express_price',
+  'pay_price',
+  'pay_method',
+  'create_time',
+  'user_info',
+  'buyer_remark',
+  'game_platform',
+  'game_account_id',
+  'contact_mobile',
+  'adult_confirm',
+  'delivery_type',
+  'receipt_name',
+  'receipt_phone',
+  'receipt_address',
+  'pay_status',
+  'pay_time',
+  'delivery_status',
+  'delivery_time',
+  'receipt_status',
+  'receipt_time',
+  'order_status',
+  'order_source'
 ]
 
 const LOCAL_DATA_KEY = 'order_export_form'
@@ -255,7 +263,7 @@ export default {
     handleReset () {
       this.myForm.resetFields()
       storage.remove(LOCAL_DATA_KEY)
-    },
+    }
 
   }
 

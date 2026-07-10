@@ -1,23 +1,33 @@
 <template>
   <view class="container p-bottom" :style="appThemeStyle">
     <view v-if="order.goodsList && order.goodsList.length">
-      <view class="service-card b-f m-top20">
-        <view class="service-title">服务预约信息</view>
-        <view class="form-item">
-          <text class="label">联系人</text>
-          <input class="input" v-model="contactName" placeholder="请输入联系人姓名" />
+      <view v-if="isServiceCheckout" class="service-card b-f m-top20">
+        <view class="service-title">服务订单信息</view>
+        <view class="form-item form-item--block">
+          <text class="label">端游 / 手游</text>
+          <view class="option-group">
+            <view class="option-chip" :class="{ active: gamePlatform === 'pc' }" @click="gamePlatform = 'pc'">端游</view>
+            <view class="option-chip" :class="{ active: gamePlatform === 'mobile' }" @click="gamePlatform = 'mobile'">手游</view>
+          </view>
         </view>
         <view class="form-item">
-          <text class="label">联系电话</text>
-          <input class="input" v-model="contactMobile" type="number" maxlength="11" placeholder="请输入联系电话" />
+          <text class="label">游戏 ID</text>
+          <input class="input" v-model="gameAccountId" placeholder="请填写游戏账号 ID" />
         </view>
         <view class="form-item">
-          <text class="label">时间偏好</text>
-          <input class="input" v-model="timePreference" placeholder="例如：周末 / 工作日晚上" />
+          <text class="label">联系方式</text>
+          <input class="input" v-model="contactMobile" type="number" maxlength="11" placeholder="请填写应急联系方式" />
+        </view>
+        <view class="form-item form-item--block">
+          <text class="label">成年人下单</text>
+          <view class="confirm-box" :class="{ active: adultConfirm }" @click="adultConfirm = !adultConfirm">
+            <text class="confirm-icon">{{ adultConfirm ? '☑' : '☐' }}</text>
+            <text>确认成年人下单</text>
+          </view>
         </view>
         <view class="form-item form-item--textarea">
           <text class="label">备注</text>
-          <textarea class="textarea" v-model="remark" maxlength="100" placeholder="选填：补充服务需求" />
+          <textarea class="textarea" v-model="remark" maxlength="100" placeholder="如有其他要求，请再次补充。" />
         </view>
       </view>
 
@@ -46,6 +56,7 @@
         <view class="dis-flex chackout-box">
           <view class="chackout-left pl-12">应付：<text class="col-m">￥{{ order.orderPayPrice }}</text></view>
           <view class="chackout-right" @click="onSubmitOrder()"><view class="flow-btn f-32" :class="{ disabled }">提交订单</view></view>
+        </view>
       </view>
 
       <u-popup v-if="showCouponEntry" v-model="showPopup" mode="bottom">
@@ -68,8 +79,6 @@
         </view>
       </u-popup>
     </view>
-
-    </view>
     <u-toast ref="uToast" />
   </view>
 </template>
@@ -81,8 +90,6 @@
   import { isH5, isMpWeixin, isWeixinOfficial } from '@/core/platform'
 
   const getCheckoutApi = () => CheckoutApi
-  const PHYSICAL_ORDER_TYPE = 10
-  const SERVICE_DELIVERY_TYPE = 30
   const getMode = (options) => options.mode || 'buyNow'
   const getModeParam = (options) => getMode(options) === 'cart'
     ? { cartIds: options.cartIds || '' }
@@ -90,35 +97,132 @@
 
   export default {
     computed: {
-      showCouponEntry() {
+      showCouponEntry () {
         return !(isH5 || isMpWeixin || isWeixinOfficial)
+      },
+      isServiceCheckout () {
+        const order = this.order || {}
+        if (order && Object.prototype.hasOwnProperty.call(order, 'isServicePackage')) {
+          return !!order.isServicePackage
+        }
+        return (this.options.scene || '') === 'service'
       }
     },
-    data() { return { CouponTypeEnum, options: {}, selectCouponId: 0, remark: '', contactName: '', contactMobile: '', timePreference: '', disabled: false, showPopup: false, order: {}, personal: {}, setting: {} } },
-    onLoad(options) {
+    data () {
+      return {
+        CouponTypeEnum,
+        options: {},
+        selectCouponId: 0,
+        remark: '',
+        gamePlatform: '',
+        gameAccountId: '',
+        contactMobile: '',
+        adultConfirm: false,
+        disabled: false,
+        showPopup: false,
+        order: {},
+        personal: {},
+        setting: {}
+      }
+    },
+    onLoad (options) {
       this.options = options
       if (this.isUnsupportedScene(options)) {
         uni.showToast({ title: '该结算入口已停用', icon: 'none' })
         setTimeout(() => uni.navigateBack({ delta: 1 }), 1200)
       }
     },
-    onShow() { this.getOrderData() },
+    onShow () {
+      this.getOrderData()
+    },
     methods: {
-      getOrderData() {
+      getOrderData () {
         const params = this.getRequestParam()
         getCheckoutApi().order(getMode(this.options), params).then(result => this.initData(result.data)).catch(err => err)
       },
-      initData({ order, setting, personal }) { this.order = order; this.personal = personal; this.setting = setting; if (order.hasError) this.showToast(order.errorMsg, 3000); this.selectCouponId = order.couponId },
-      getRequestParam() { return { scene: this.options.scene || '', couponId: this.selectCouponId || 0, remark: this.remark || '', contactName: this.contactName || '', contactMobile: this.contactMobile || '', timePreference: this.timePreference || '', ...getModeParam(this.options) } },
-      isUnsupportedScene() { return false },
-      handleShowPopup() { this.showPopup = true },
-      handleSelectCoupon(index) { const couponItem = this.order.couponList[index]; if (!couponItem.is_apply) return this.showToast(couponItem.not_apply_info); this.selectCouponId = this.selectCouponId == couponItem.user_coupon_id ? 0 : couponItem.user_coupon_id; this.getOrderData(); this.showPopup = false },
-      handleNotUseCoupon() { this.selectCouponId = 0; this.getOrderData(); this.showPopup = false },
-      onTargetGoods(goodsId) { this.$navTo('pages/goods/detail', { goodsId }) },
-      onSubmitOrder() { if (this.disabled) return false; if (!this.onVerifyFrom()) return false; this.disabled = true; getCheckoutApi().submit(getMode(this.options), this.getFormData()).then(result => { const orderId = result.data.orderId; if (result.data.isPaySuccess) { this.showToast(result.message, 1500); setTimeout(() => this.$navTo('pages/order/index', {}, 'redirectTo'), 1500) } else { setTimeout(() => this.$navTo('pages/checkout/cashier/index', { orderId }, 'redirectTo'), 100) } }).catch(res => this.showToast(res.errMsg, 3000)).finally(() => setTimeout(() => this.disabled = false, 1600)) },
-      getFormData() { return { scene: this.options.scene || '', couponId: this.selectCouponId || 0, remark: this.remark || '', contactName: this.contactName || '', contactMobile: this.contactMobile || '', timePreference: this.timePreference || '', ...getModeParam(this.options) } },
-      onVerifyFrom() { if (!this.contactName) return this.showToast('请输入联系人') , false; if (!Verify.isMobile(this.contactMobile)) return this.showToast('请输入正确的联系电话'), false; return true },
-      showToast(title, duration = 2000) { this.$refs.uToast.show({ title, duration }) }
+      initData ({ order, setting, personal }) {
+        this.order = order
+        this.personal = personal
+        this.setting = setting
+        if (order.hasError) this.showToast(order.errorMsg, 3000)
+        this.selectCouponId = order.couponId
+      },
+      getRequestParam () {
+        const params = {
+          scene: this.options.scene || '',
+          couponId: this.selectCouponId || 0,
+          remark: this.remark || '',
+          ...getModeParam(this.options)
+        }
+        if (this.isServiceCheckout) {
+          params.gamePlatform = this.gamePlatform || ''
+          params.gameAccountId = this.gameAccountId || ''
+          params.contactMobile = this.contactMobile || ''
+          params.adultConfirm = this.adultConfirm ? 1 : 0
+        }
+        return params
+      },
+      isUnsupportedScene () {
+        return false
+      },
+      handleShowPopup () {
+        this.showPopup = true
+      },
+      handleSelectCoupon (index) {
+        const couponItem = this.order.couponList[index]
+        if (!couponItem.is_apply) return this.showToast(couponItem.not_apply_info)
+        this.selectCouponId = this.selectCouponId === couponItem.user_coupon_id ? 0 : couponItem.user_coupon_id
+        this.getOrderData()
+        this.showPopup = false
+      },
+      handleNotUseCoupon () {
+        this.selectCouponId = 0
+        this.getOrderData()
+        this.showPopup = false
+      },
+      onTargetGoods (goodsId) {
+        this.$navTo('pages/goods/detail', { goodsId })
+      },
+      onSubmitOrder () {
+        if (this.disabled) return false
+        if (!this.onVerifyFrom()) return false
+        this.disabled = true
+        getCheckoutApi().submit(getMode(this.options), this.getFormData()).then(result => {
+          const orderId = result.data.orderId
+          if (result.data.isPaySuccess) {
+            this.showToast(result.message, 1500)
+            setTimeout(() => this.$navTo('pages/order/index', {}, 'redirectTo'), 1500)
+          } else {
+            setTimeout(() => this.$navTo('pages/checkout/cashier/index', { orderId }, 'redirectTo'), 100)
+          }
+        }).catch(res => this.showToast(res.errMsg, 3000)).finally(() => setTimeout(() => { this.disabled = false }, 1600))
+      },
+      getFormData () {
+        const data = {
+          scene: this.options.scene || '',
+          couponId: this.selectCouponId || 0,
+          remark: this.remark || '',
+          ...getModeParam(this.options)
+        }
+        if (this.isServiceCheckout) {
+          data.gamePlatform = this.gamePlatform || ''
+          data.gameAccountId = this.gameAccountId || ''
+          data.contactMobile = this.contactMobile || ''
+          data.adultConfirm = this.adultConfirm ? 1 : 0
+        }
+        return data
+      },
+      onVerifyFrom () {
+        if (!this.isServiceCheckout) return true
+        if (!this.gamePlatform) return this.showToast('请选择端游或手游'), false
+        if (!this.gameAccountId) return this.showToast('请输入游戏ID'), false
+        if (!Verify.isMobile(this.contactMobile)) return this.showToast('请输入正确的联系方式'), false
+        if (!this.adultConfirm) return this.showToast('请确认成年人下单'), false
+        return true
+      },
+      showToast (title, duration = 2000) {
+        this.$refs.uToast.show({ title, duration })
+      }
     }
   }
 </script>
@@ -127,6 +231,13 @@
   @import "./style.scss";
   .service-card { padding: 24rpx 30rpx; background: #fff; }
   .service-title { font-size: 30rpx; font-weight: 600; margin-bottom: 20rpx; }
-  .form-item { display: flex; align-items: center; padding: 18rpx 0; border-bottom: 1rpx solid #f3f3f3; .label { width: 160rpx; color: #666; font-size: 28rpx; } .input, .textarea { flex: 1; font-size: 28rpx; } }
+  .form-item { display: flex; align-items: center; padding: 18rpx 0; border-bottom: 1rpx solid #f3f3f3; .label { width: 170rpx; color: #666; font-size: 28rpx; } .input, .textarea { flex: 1; font-size: 28rpx; } }
   .form-item--textarea { align-items: flex-start; .textarea { min-height: 120rpx; padding-top: 8rpx; } }
+  .form-item--block { align-items: flex-start; .label { padding-top: 8rpx; } }
+  .option-group { display: flex; flex-wrap: wrap; gap: 18rpx; }
+  .option-chip { min-width: 140rpx; padding: 14rpx 28rpx; border-radius: 999rpx; border: 1rpx solid #d8d8d8; color: #666; text-align: center; }
+  .option-chip.active { color: #fff; background: linear-gradient(135deg, #f4c46c, #d89b3d); border-color: transparent; }
+  .confirm-box { display: flex; align-items: center; color: #666; font-size: 28rpx; }
+  .confirm-box.active { color: #333; font-weight: 500; }
+  .confirm-icon { margin-right: 14rpx; font-size: 32rpx; }
 </style>

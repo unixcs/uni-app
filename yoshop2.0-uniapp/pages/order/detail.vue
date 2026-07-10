@@ -31,9 +31,10 @@
       <view class="order-info i-card">
         <view class="info-item"><view class="item-lable">订单编号</view><view class="item-content"><text>{{ order.order_no }}</text><view class="act-copy" @click="handleCopy(order.order_no)"><text>复制</text></view></view></view>
         <view class="info-item"><view class="item-lable">下单时间</view><view class="item-content"><text>{{ order.create_time }}</text></view></view>
-        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">联系人</view><view class="item-content"><text>{{ (order.service_contact && order.service_contact.contact_name) || '--' }}</text></view></view>
-        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">联系电话</view><view class="item-content"><text>{{ (order.service_contact && order.service_contact.contact_mobile) || '--' }}</text></view></view>
-        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">时间偏好</view><view class="item-content"><text>{{ (order.service_contact && order.service_contact.time_preference) || '--' }}</text></view></view>
+        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">游戏平台</view><view class="item-content"><text>{{ getGamePlatformText((order.service_contact && order.service_contact.game_platform) || '') || '--' }}</text></view></view>
+        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">游戏 ID</view><view class="item-content"><text>{{ (order.service_contact && order.service_contact.game_account_id) || '--' }}</text></view></view>
+        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">联系方式</view><view class="item-content"><text>{{ (order.service_contact && order.service_contact.contact_mobile) || '--' }}</text></view></view>
+        <view v-if="isServiceOrder" class="info-item"><view class="item-lable">成年人下单</view><view class="item-content"><text>{{ getAdultConfirmText(order.service_contact && order.service_contact.adult_confirm) }}</text></view></view>
         <view class="info-item"><view class="item-lable">备注</view><view class="item-content"><text>{{ order.remark || '--' }}</text></view></view>
       </view>
 
@@ -113,7 +114,7 @@
           return !!this.order.is_service_order
         }
         const contact = this.order.service_contact || {}
-        return !!(contact.contact_name || contact.contact_mobile || contact.time_preference)
+        return !!(contact.game_platform || contact.game_account_id || contact.contact_mobile || this.isAdultConfirmed(contact.adult_confirm))
       },
       hasRefundInfo() {
         const info = this.refundInfo || {}
@@ -177,6 +178,18 @@
           is_terminal: !!source.is_terminal,
           images: source.images || []
         }
+      },
+      getGamePlatformText(value) {
+        if (value === 'pc') return '端游'
+        if (value === 'mobile') return '手游'
+        return ''
+      },
+      isAdultConfirmed(value) {
+        return value === true || value === 1 || value === '1' || value === 'true'
+      },
+      getAdultConfirmText(value) {
+        if (value === null || typeof value === 'undefined' || value === '') return '--'
+        return this.isAdultConfirmed(value) ? '已确认' : '未确认'
       },
       getRefundOrderGoodsId(order = this.order) {
         const goodsList = Array.isArray(order.goods) ? order.goods : []

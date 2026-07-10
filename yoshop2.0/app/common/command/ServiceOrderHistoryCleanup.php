@@ -1,12 +1,14 @@
 <?php
 // +----------------------------------------------------------------------
-// | 历史测试服务单清理命令
+// | 历史服务订单 soft-delete 隐藏命令
 // +----------------------------------------------------------------------
 declare (strict_types=1);
 
 namespace app\common\command;
 
 use app\common\enum\order\DeliveryType as DeliveryTypeEnum;
+use app\common\model\Order as OrderModel;
+use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use think\console\Command;
 use think\console\Input;
 use think\console\input\Option;
@@ -15,15 +17,12 @@ use think\facade\Db;
 
 class ServiceOrderHistoryCleanup extends Command
 {
-    private const DEFAULT_USER_IDS = '10001,10003,10004';
-    private const STORE_ID = 10001;
-
     protected function configure()
     {
         $this->setName('service-order:history-cleanup')
-            ->addOption('user-ids', null, Option::VALUE_OPTIONAL, '要清理的测试用户ID，逗号分隔', self::DEFAULT_USER_IDS)
+            ->addOption('before-time', null, Option::VALUE_REQUIRED, '显式 cutoff_time，支持时间戳或 strtotime 可解析时间')
             ->addOption('mode', null, Option::VALUE_OPTIONAL, 'dry-run / soft-delete', 'dry-run')
-            ->setDescription('清理历史手工测试留下的服务单，默认只预览，不直接删');
+            ->setDescription('按 cutoff_time 隐藏历史服务订单，默认仅 dry-run 预览');
     }
 
     protected function execute(Input $input, Output $output)
@@ -34,28 +33,32 @@ class ServiceOrderHistoryCleanup extends Command
             return 1;
         }
 
-        $userIds = $this->parseUserIds((string)$input->getOption('user-ids'));
-        if (empty($userIds)) {
-            $output->writeln('<error>没有拿到可清理的 user_id</error>');
+        $beforeTimeRaw = trim((string)$input->getOption('before-time'));
+        $beforeTime = $this->parseBeforeTime($beforeTimeRaw);
+        if ($beforeTime <= 0) {
+            $output->writeln('<error>请通过 --before-time 显式传入有效 cutoff_time</error>');
             return 1;
         }
 
         $orders = Db::name('order')
-            ->where('store_id', '=', self::STORE_ID)
             ->where('delivery_type', '=', DeliveryTypeEnum::NOTHING)
             ->where('is_delete', '=', 0)
-            ->where('user_id', 'in', $userIds)
-            ->field('order_id,order_no,user_id,pay_status,order_status,delivery_status,receipt_status,pay_price,trade_id,create_time,update_time')
-            ->order('order_id', 'desc')
+            ->where('create_time', '<', $beforeTime)
+            ->field('order_id,order_no,user_id,pay_status,order_status,delivery_status,receipt_status,pay_price,trade_id,create_time,update_time,delivery_type,order_source_data')
+            ->order('create_time', 'asc')
             ->select()
             ->toArray();
+
+        $orders = array_values(array_filter($orders, static function (array $row): bool {
+            return OrderModel::isServiceOrderData($row);
+        }));
 
         $orderIds = array_map(static fn(array $row): int => (int)$row['order_id'], $orders);
         $summary = $this->buildSummary($orders, $orderIds);
 
-        $output->writeln('历史测试服务单清理');
+        $output->writeln('历史服务订单 soft-delete hide');
         $output->writeln('mode: ' . $mode);
-        $output->writeln('user_ids: ' . implode(',', $userIds));
+        $output->writeln('before_time: ' . date('Y-m-d H:i:s', $beforeTime) . ' (' . $beforeTime . ')');
         foreach ($summary as $key => $value) {
             $output->writeln(sprintf('%s: %s', $key, (string)$value));
         }
@@ -68,7 +71,7 @@ class ServiceOrderHistoryCleanup extends Command
             return 0;
         }
 
-        $backupFile = $this->writeBackup($orders, $summary, $userIds);
+        $backupFile = $this->writeBackup($orders, $summary, $beforeTime);
         Db::name('order')
             ->where('order_id', 'in', $orderIds)
             ->update([
@@ -81,17 +84,20 @@ class ServiceOrderHistoryCleanup extends Command
         return 0;
     }
 
-    /** @return int[] */
-    private function parseUserIds(string $raw): array
+    /**
+     * @param string $raw
+     * @return int
+     */
+    private function parseBeforeTime(string $raw): int
     {
-        $rows = array_filter(array_map('trim', explode(',', $raw)), static fn(string $value): bool => $value !== '');
-        $userIds = [];
-        foreach ($rows as $value) {
-            if (ctype_digit($value)) {
-                $userIds[] = (int)$value;
-            }
+        if ($raw === '') {
+            return 0;
         }
-        return array_values(array_unique(array_filter($userIds, static fn(int $value): bool => $value > 0)));
+        if (ctype_digit($raw)) {
+            return (int)$raw;
+        }
+        $timestamp = strtotime($raw);
+        return $timestamp === false ? 0 : (int)$timestamp;
     }
 
     /**
@@ -130,11 +136,11 @@ class ServiceOrderHistoryCleanup extends Command
                 $summary['in_service']++;
                 continue;
             }
-            if ($orderStatus === 20) {
+            if ($orderStatus === OrderStatusEnum::COMPLETED) {
                 $summary['completed']++;
                 continue;
             }
-            if ($orderStatus === 30) {
+            if ($orderStatus === OrderStatusEnum::CANCELLED) {
                 $summary['cancelled']++;
             }
         }
@@ -151,9 +157,9 @@ class ServiceOrderHistoryCleanup extends Command
     /**
      * @param array<int, array<string, mixed>> $orders
      * @param array<string, int> $summary
-     * @param int[] $userIds
+     * @param int $beforeTime
      */
-    private function writeBackup(array $orders, array $summary, array $userIds): string
+    private function writeBackup(array $orders, array $summary, int $beforeTime): string
     {
         $dir = runtime_path() . 'service-order-cleanup';
         if (!is_dir($dir)) {
@@ -162,7 +168,8 @@ class ServiceOrderHistoryCleanup extends Command
         $file = $dir . '/history-cleanup-' . date('YmdHis') . '.json';
         file_put_contents($file, json_encode([
             'created_at' => date('c'),
-            'user_ids' => $userIds,
+            'before_time' => $beforeTime,
+            'before_time_text' => date('Y-m-d H:i:s', $beforeTime),
             'summary' => $summary,
             'orders' => $orders,
         ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));

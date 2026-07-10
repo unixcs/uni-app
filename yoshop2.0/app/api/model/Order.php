@@ -72,7 +72,6 @@ class Order extends OrderModel
         'payment_amount',
         'service_contact',
         'remark',
-        'time_preference',
         'service_times',
         'timestamps',
         'is_service_order',
@@ -537,10 +536,12 @@ class Order extends OrderModel
      */
     public function getServiceContactAttr($value): array
     {
+        $serviceContact = static::getServiceContactData($this);
         return [
-            'contact_name' => (string)$this['contact_name'],
-            'contact_mobile' => (string)$this['contact_mobile'],
-            'time_preference' => (string)$this['time_preference'],
+            'game_platform' => (string)($serviceContact['game_platform'] ?? ''),
+            'game_account_id' => (string)($serviceContact['game_account_id'] ?? ''),
+            'contact_mobile' => (string)($serviceContact['contact_mobile'] ?? ''),
+            'adult_confirm' => (int)($serviceContact['adult_confirm'] ?? 0),
         ];
     }
 

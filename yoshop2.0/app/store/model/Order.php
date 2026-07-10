@@ -281,15 +281,20 @@ class Order extends OrderModel
      */
     private function normalizeQueryParams(array $param): array
     {
-        return $this->setQueryDefaultValue($param, [
-            'searchType' => '',     // 关键词类型 (10订单号 20会员昵称 30会员ID 40联系人姓名 50联系人电话 60第三方支付订单号)
+        $params = $this->setQueryDefaultValue($param, [
+            'searchType' => 10,     // 关键词类型 (10订单号 20会员昵称 30会员ID 60第三方支付订单号)
             'searchValue' => '',    // 关键词内容
+            'serviceSearchFields' => [], // 服务单字段复选框
+            'gamePlatform' => '',   // 服务单游戏平台筛选
             'orderSource' => -1,    // 订单来源
             'payMethod' => '',      // 支付方式
             'deliveryType' => -1,   // 兼容旧参数，服务订单场景忽略
             'betweenTime' => [],    // 起止时间
             'userId' => 0,          // 会员ID
         ]);
+        $params['serviceSearchFields'] = $this->normalizeServiceSearchFields($params['serviceSearchFields'] ?? []);
+        $params['gamePlatform'] = $this->normalizeServiceGamePlatform((string)($params['gamePlatform'] ?? ''));
+        return $params;
     }
 
     /**
@@ -301,47 +306,130 @@ class Order extends OrderModel
     private function applyKeywordFilter($query, array $params): void
     {
         $searchValue = trim((string)$params['searchValue']);
-        if ($searchValue === '') {
-            return;
+        $serviceSearchFields = $params['serviceSearchFields'] ?? [];
+        if ($searchValue !== '') {
+            $searchLikeValue = '%' . $this->escapeLikeValue($searchValue) . '%';
+            $conditions = [];
+            $bindings = [];
+            $this->appendBaseSearchConditions($conditions, $bindings, (int)$params['searchType'], $searchValue, $searchLikeValue);
+            $this->appendServiceSearchConditions($conditions, $bindings, $serviceSearchFields, $searchLikeValue);
+            if (empty($conditions)) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereRaw('(' . implode(' OR ', $conditions) . ')', $bindings);
+            }
         }
-        $searchLikeValue = $this->escapeLikeValue($searchValue);
-        switch ((int)$params['searchType']) {
+        if (!empty($params['gamePlatform'])) {
+            $query->whereRaw(
+                "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.game_platform')) ELSE '' END = :gamePlatform",
+                ['gamePlatform' => $params['gamePlatform']]
+            );
+        }
+    }
+
+    /**
+     * 追加基础搜索条件
+     * @param array $conditions
+     * @param array $bindings
+     * @param int $searchType
+     * @param string $searchValue
+     * @param string $searchLikeValue
+     * @return void
+     */
+    private function appendBaseSearchConditions(array &$conditions, array &$bindings, int $searchType, string $searchValue, string $searchLikeValue): void
+    {
+        switch ($searchType) {
             case 10:
-                $query->where('order.order_no', 'like', "%{$searchLikeValue}%");
+                $conditions[] = 'order.order_no LIKE :searchOrderNo';
+                $bindings['searchOrderNo'] = $searchLikeValue;
                 break;
             case 20:
-                $query->where('user.nick_name', 'like', "%{$searchLikeValue}%");
+                $conditions[] = 'user.nick_name LIKE :searchNickName';
+                $bindings['searchNickName'] = $searchLikeValue;
                 break;
             case 30:
                 if (preg_match('/^\d+$/', $searchValue)) {
-                    $query->where('order.user_id', '=', (int)$searchValue);
-                } else {
-                    $query->where('order.user_id', '=', -1);
+                    $conditions[] = 'order.user_id = :searchUserId';
+                    $bindings['searchUserId'] = (int)$searchValue;
                 }
                 break;
             case 40:
-                $query->whereRaw(
-                    "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_name')) ELSE '' END LIKE :searchValue",
-                    ['searchValue' => "%{$searchLikeValue}%"]
-                );
+                $conditions[] = "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.game_account_id')) ELSE '' END LIKE :searchGameAccountId";
+                $bindings['searchGameAccountId'] = $searchLikeValue;
                 break;
             case 50:
-                $query->whereRaw(
-                    "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_mobile')) ELSE '' END LIKE :searchValue",
-                    ['searchValue' => "%{$searchLikeValue}%"]
-                );
+                $conditions[] = "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_mobile')) ELSE '' END LIKE :searchContactMobile";
+                $bindings['searchContactMobile'] = $searchLikeValue;
                 break;
             case 60:
-                $query->where(function ($subQuery) use ($searchLikeValue) {
-                    $subQuery->where('trade.out_trade_no', 'like', "%{$searchLikeValue}%")
-                        ->whereExists(function ($existsQuery) use ($searchLikeValue) {
-                            $existsQuery->name('payment_trade')
-                                ->whereRaw('payment_trade.order_id = `order`.order_id')
-                                ->where('payment_trade.out_trade_no', 'like', "%{$searchLikeValue}%");
-                        }, 'OR');
-                });
+                $conditions[] = '(trade.out_trade_no LIKE :searchOutTradeNo OR EXISTS (SELECT 1 FROM payment_trade WHERE payment_trade.order_id = `order`.order_id AND payment_trade.out_trade_no LIKE :searchOutTradeNoExists))';
+                $bindings['searchOutTradeNo'] = $searchLikeValue;
+                $bindings['searchOutTradeNoExists'] = $searchLikeValue;
                 break;
         }
+    }
+
+    /**
+     * 追加服务订单字段搜索条件
+     * @param array $conditions
+     * @param array $bindings
+     * @param array $serviceSearchFields
+     * @param string $searchLikeValue
+     * @return void
+     */
+    private function appendServiceSearchConditions(array &$conditions, array &$bindings, array $serviceSearchFields, string $searchLikeValue): void
+    {
+        foreach ($serviceSearchFields as $field) {
+            switch ($field) {
+                case 'game_account_id':
+                    $conditions[] = "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.game_account_id')) ELSE '' END LIKE :serviceSearchGameAccountId";
+                    $bindings['serviceSearchGameAccountId'] = $searchLikeValue;
+                    break;
+                case 'contact_mobile':
+                    $conditions[] = "CASE WHEN JSON_VALID(order.order_source_data) THEN JSON_UNQUOTE(JSON_EXTRACT(order.order_source_data, '$.service_contact.contact_mobile')) ELSE '' END LIKE :serviceSearchContactMobile";
+                    $bindings['serviceSearchContactMobile'] = $searchLikeValue;
+                    break;
+                case 'buyer_remark':
+                    $conditions[] = 'order.buyer_remark LIKE :serviceSearchBuyerRemark';
+                    $bindings['serviceSearchBuyerRemark'] = $searchLikeValue;
+                    break;
+            }
+        }
+    }
+
+    /**
+     * 规范化服务订单搜索字段
+     * @param mixed $fields
+     * @return array
+     */
+    private function normalizeServiceSearchFields($fields): array
+    {
+        if (is_string($fields)) {
+            $fields = explode(',', $fields);
+        }
+        if (!is_array($fields)) {
+            return [];
+        }
+        $allowed = ['game_account_id', 'contact_mobile', 'buyer_remark'];
+        $normalized = [];
+        foreach ($fields as $field) {
+            $field = trim((string)$field);
+            if ($field !== '' && in_array($field, $allowed, true)) {
+                $normalized[] = $field;
+            }
+        }
+        return array_values(array_unique($normalized));
+    }
+
+    /**
+     * 规范化服务订单游戏平台
+     * @param string $value
+     * @return string
+     */
+    private function normalizeServiceGamePlatform(string $value): string
+    {
+        $value = strtolower(trim($value));
+        return in_array($value, ['pc', 'mobile'], true) ? $value : '';
     }
 
     /**

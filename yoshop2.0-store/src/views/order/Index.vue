@@ -12,6 +12,15 @@
                 </a-select>
               </a-input>
             </a-form-item>
+            <a-form-item label="服务单字段">
+              <a-checkbox-group :options="serviceSearchFieldOptions" v-decorator="['serviceSearchFields', { initialValue: [] }]" />
+            </a-form-item>
+            <a-form-item label="游戏平台">
+              <a-select style="width: 120px" v-decorator="['gamePlatform', { initialValue: '' }]">
+                <a-select-option value="">全部</a-select-option>
+                <a-select-option v-for="(item, index) in gamePlatformOptions" :key="index" :value="item.value">{{ item.label }}</a-select-option>
+              </a-select>
+            </a-form-item>
             <a-form-item label="订单来源">
               <a-select v-decorator="['orderSource', { initialValue: -1 }]">
                 <a-select-option :value="-1">全部</a-select-option>
@@ -76,9 +85,10 @@
                         <p class="c-muted-1 mt-5">会员ID：{{ item.user ? item.user.user_id : '--' }}</p>
                       </td>
                       <td>
-                        <p>联系人：{{ getServiceContactField(item, 'contact_name') || '--' }}</p>
-                        <p>电话：{{ getServiceContactField(item, 'contact_mobile') || '--' }}</p>
-                        <p class="c-muted-1">时间偏好：{{ getServiceContactField(item, 'time_preference') || '--' }}</p>
+                        <p>游戏平台：{{ getGamePlatformText(getServiceContactField(item, 'game_platform')) || '--' }}</p>
+                        <p>游戏ID：{{ getServiceContactField(item, 'game_account_id') || '--' }}</p>
+                        <p>联系方式：{{ getServiceContactField(item, 'contact_mobile') || '--' }}</p>
+                        <p class="c-muted-1">成年人下单：{{ getAdultConfirmText(getServiceContactField(item, 'adult_confirm')) }}</p>
                       </td>
                       <td>
                         <a-tag :color="item.pay_status == PayStatusEnum.SUCCESS.value ? 'green' : ''">{{ PayStatusEnum[item.pay_status].name }}</a-tag>
@@ -139,9 +149,18 @@ const SearchTypeEnum = [
   { name: '订单号', value: 10 },
   { name: '第三方支付订单号', value: 60 },
   { name: '会员昵称', value: 20 },
-  { name: '会员ID', value: 30 },
-  { name: '联系人姓名', value: 40 },
-  { name: '联系人电话', value: 50 }
+  { name: '会员ID', value: 30 }
+]
+
+const serviceSearchFieldOptions = [
+  { label: '游戏ID', value: 'game_account_id' },
+  { label: '联系方式', value: 'contact_mobile' },
+  { label: '备注', value: 'buyer_remark' }
+]
+
+const gamePlatformOptions = [
+  { label: '端游', value: 'pc' },
+  { label: '手游', value: 'mobile' }
 ]
 
 export default {
@@ -154,6 +173,8 @@ export default {
       queryParam: {},
       isLoading: false,
       columns,
+      serviceSearchFieldOptions,
+      gamePlatformOptions,
       page: 1,
       orderList: { data: [], total: 0, per_page: 10 }
     }
@@ -208,6 +229,9 @@ export default {
     },
     handleReset () {
       this.searchForm.resetFields()
+      this.queryParam = {}
+      this.page = 1
+      this.handleRefresh(true)
     },
     onChangePage (current) {
       this.page = current
@@ -224,14 +248,26 @@ export default {
       if (item.pay_status === PayStatusEnum.PENDING.value) return ''
       return status === '已退款' ? 'red' : 'blue'
     },
+    getGamePlatformText (value) {
+      if (value === 'pc') return '端游'
+      if (value === 'mobile') return '手游'
+      return ''
+    },
+    isAdultConfirmed (value) {
+      return value === true || value === 1 || value === '1' || value === 'true'
+    },
+    getAdultConfirmText (value) {
+      if (value === null || typeof value === 'undefined' || value === '') return '--'
+      return this.isAdultConfirmed(value) ? '已确认' : '未确认'
+    },
     getServiceContactField (item, field) {
       if (!item || typeof item !== 'object') {
         return ''
       }
-      if (item[field]) {
+      if (Object.prototype.hasOwnProperty.call(item, field) && item[field] !== null && typeof item[field] !== 'undefined') {
         return item[field]
       }
-      if (item.service_contact && item.service_contact[field]) {
+      if (item.service_contact && Object.prototype.hasOwnProperty.call(item.service_contact, field)) {
         return item.service_contact[field]
       }
       let sourceData = item.order_source_data || {}
@@ -243,7 +279,7 @@ export default {
         }
       }
       const serviceContact = sourceData.service_contact || {}
-      return serviceContact[field] || ''
+      return Object.prototype.hasOwnProperty.call(serviceContact, field) ? serviceContact[field] : ''
     },
     firstGoods (item) {
       return (item.goods && item.goods[0]) || {}

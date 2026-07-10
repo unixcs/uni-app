@@ -66,9 +66,10 @@
               <span class="c-p">{{ record.user ? record.user.nick_name : '-' }}</span>
             </a-tooltip>
           </a-descriptions-item>
-          <a-descriptions-item label="联系人">{{ getServiceContactField('contact_name') || '--' }}</a-descriptions-item>
-          <a-descriptions-item label="联系电话">{{ getServiceContactField('contact_mobile') || '--' }}</a-descriptions-item>
-          <a-descriptions-item label="时间偏好">{{ getServiceContactField('time_preference') || '--' }}</a-descriptions-item>
+          <a-descriptions-item label="游戏平台">{{ getGamePlatformText(getServiceContactField('game_platform')) || '--' }}</a-descriptions-item>
+          <a-descriptions-item label="游戏ID">{{ getServiceContactField('game_account_id') || '--' }}</a-descriptions-item>
+          <a-descriptions-item label="联系方式">{{ getServiceContactField('contact_mobile') || '--' }}</a-descriptions-item>
+          <a-descriptions-item label="成年人下单">{{ getAdultConfirmText(getServiceContactField('adult_confirm')) }}</a-descriptions-item>
           <a-descriptions-item label="买家留言">{{ record.buyer_remark || '-' }}</a-descriptions-item>
           <a-descriptions-item label="商家备注">{{ record.merchant_remark || '-' }}</a-descriptions-item>
           <a-descriptions-item v-if="record.trade" label="第三方支付订单号">{{ record.trade.out_trade_no || '-' }}</a-descriptions-item>
@@ -322,12 +323,24 @@ export default {
     this.handleRefresh()
   },
   methods: {
+    getGamePlatformText (value) {
+      if (value === 'pc') return '端游'
+      if (value === 'mobile') return '手游'
+      return ''
+    },
+    isAdultConfirmed (value) {
+      return value === true || value === 1 || value === '1' || value === 'true'
+    },
+    getAdultConfirmText (value) {
+      if (value === null || typeof value === 'undefined' || value === '') return '--'
+      return this.isAdultConfirmed(value) ? '已确认' : '未确认'
+    },
     getServiceContactField (field) {
       const record = this.record || {}
-      if (record[field]) {
+      if (Object.prototype.hasOwnProperty.call(record, field) && record[field] !== null && typeof record[field] !== 'undefined') {
         return record[field]
       }
-      if (record.service_contact && record.service_contact[field]) {
+      if (record.service_contact && Object.prototype.hasOwnProperty.call(record.service_contact, field)) {
         return record.service_contact[field]
       }
       let sourceData = record.order_source_data || {}
@@ -339,7 +352,7 @@ export default {
         }
       }
       const serviceContact = sourceData.service_contact || {}
-      return serviceContact[field] || ''
+      return Object.prototype.hasOwnProperty.call(serviceContact, field) ? serviceContact[field] : ''
     },
     handleRefresh () {
       this.getDetail()

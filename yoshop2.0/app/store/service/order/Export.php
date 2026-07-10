@@ -180,9 +180,10 @@ class Export extends BaseService
             'create_time' => '下单时间',
             'user_info' => '买家信息',
             'buyer_remark' => '买家备注',
-            'contact_name' => '联系人',
-            'contact_mobile' => '联系电话',
-            'time_preference' => '服务时间偏好',
+            'game_platform' => '游戏平台',
+            'game_account_id' => '游戏ID',
+            'contact_mobile' => '联系方式',
+            'adult_confirm' => '成年人下单确认',
             'pay_status' => '付款状态',
             'pay_time' => '付款时间',
             'order_status' => '订单状态',
@@ -231,9 +232,14 @@ class Export extends BaseService
                 'create_time' => $this->filterValue($order['create_time']),
                 'user_info' => $this->filterValue($order['user']['nick_name']),
                 'buyer_remark' => $this->filterValue($order['buyer_remark']),
-                'contact_name' => $this->filterValue($order['contact_name']),
+                'game_platform' => $this->filterValue(OrderModel::getServiceGamePlatformText((string)($order['game_platform'] ?? ''))),
+                'game_account_id' => $this->filterValue($order['game_account_id']),
                 'contact_mobile' => $this->filterValue($order['contact_mobile']),
-                'time_preference' => $this->filterValue($order['time_preference']),
+                'adult_confirm' => $this->filterValue(
+                    OrderModel::isServiceOrderData($order)
+                        ? OrderModel::getAdultConfirmText($order['adult_confirm'] ?? 0)
+                        : ''
+                ),
                 'pay_status' => PayStatusEnum::data()[$order['pay_status']]['name'],
                 'pay_time' => $order['pay_time'],
                 'order_status' => $order['state_text'] ?: OrderStatusEnum::data()[$order['order_status']]['name'],

@@ -205,7 +205,19 @@ class Checkout extends BaseService
         if (($this->param['scene'] ?? '') === 'service') {
             return true;
         }
-        return $this->getServiceContact() !== [];
+        return $this->hasAnyServiceContactInput();
+    }
+
+    /**
+     * 是否填写了任一服务单字段
+     * @return bool
+     */
+    private function hasAnyServiceContactInput(): bool
+    {
+        return $this->getServiceGamePlatform() !== ''
+            || trim((string)($this->param['gameAccountId'] ?? '')) !== ''
+            || trim((string)($this->param['contactMobile'] ?? '')) !== ''
+            || $this->isAdultConfirmChecked();
     }
 
     /**
@@ -415,6 +427,8 @@ class Checkout extends BaseService
     {
         $isServicePackage = $this->isServicePackage;
         return [
+            // 是否服务单结算
+            'isServicePackage' => $isServicePackage,
             // 当前订单类型
             'orderType' => $this->getOrderType(),
             // 当前配送方式
@@ -889,11 +903,7 @@ class Checkout extends BaseService
     private function createOrderEvent($order): bool
     {
         // 新增订单记录
-        $this->add($order, $this->param['remark'], [
-            'contact_name' => trim((string)($this->param['contactName'] ?? '')),
-            'contact_mobile' => trim((string)($this->param['contactMobile'] ?? '')),
-            'time_preference' => trim((string)($this->param['timePreference'] ?? '')),
-        ]);
+        $this->add($order, (string)($this->param['remark'] ?? ''), $this->getServiceContact());
         // 保存订单数据 (根据订单类型)
         $order['orderType'] == OrderTypeEnum::PHYSICAL && $this->saveOrderByPhysical($order);
         // 保存订单商品信息
@@ -935,7 +945,7 @@ class Checkout extends BaseService
      */
     private function validateOrderForm(array $order): bool
     {
-        if (!$this->validateOrderFormByService()) {
+        if ($this->isServicePackage && !$this->validateOrderFormByService()) {
             return false;
         }
         if ($order['orderType'] == OrderTypeEnum::PHYSICAL) {
@@ -950,14 +960,23 @@ class Checkout extends BaseService
      */
     private function validateOrderFormByService(): bool
     {
-        $contactName = trim((string)($this->param['contactName'] ?? ''));
+        $gamePlatform = $this->getServiceGamePlatform();
+        $gameAccountId = trim((string)($this->param['gameAccountId'] ?? ''));
         $contactMobile = trim((string)($this->param['contactMobile'] ?? ''));
-        if ($contactName === '') {
-            $this->error = '请填写联系人';
+        if (!in_array($gamePlatform, ['pc', 'mobile'], true)) {
+            $this->error = '请选择端游或手游';
+            return false;
+        }
+        if ($gameAccountId === '') {
+            $this->error = '请填写游戏ID';
             return false;
         }
         if (!preg_match('/^1\d{10}$/', $contactMobile)) {
-            $this->error = '请填写正确的联系电话';
+            $this->error = '请填写正确的联系方式';
+            return false;
+        }
+        if (!$this->isAdultConfirmChecked()) {
+            $this->error = '请确认成年人下单';
             return false;
         }
         return true;
@@ -996,12 +1015,40 @@ class Checkout extends BaseService
     private function getServiceContact(): array
     {
         return array_filter([
-            'contact_name' => trim((string)($this->param['contactName'] ?? '')),
+            'game_platform' => $this->getServiceGamePlatform(),
+            'game_account_id' => trim((string)($this->param['gameAccountId'] ?? '')),
             'contact_mobile' => trim((string)($this->param['contactMobile'] ?? '')),
-            'time_preference' => trim((string)($this->param['timePreference'] ?? '')),
+            'adult_confirm' => $this->isAdultConfirmChecked() ? 1 : 0,
         ], static function ($value) {
             return $value !== '' && $value !== null;
         });
+    }
+
+    /**
+     * 获取服务单游戏平台
+     * @return string
+     */
+    private function getServiceGamePlatform(): string
+    {
+        $value = strtolower(trim((string)($this->param['gamePlatform'] ?? '')));
+        return in_array($value, ['pc', 'mobile'], true) ? $value : '';
+    }
+
+    /**
+     * 是否已确认成年人下单
+     * @return bool
+     */
+    private function isAdultConfirmChecked(): bool
+    {
+        $value = $this->param['adultConfirm'] ?? 0;
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int)$value === 1;
+        }
+        $normalized = strtolower(trim((string)$value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
     }
 
     /**

@@ -60,9 +60,10 @@ class Order extends BaseModel
      */
     protected $append = [
         'state_text',   // 售后单状态文字描述
-        'contact_name',
+        'game_platform',
+        'game_account_id',
         'contact_mobile',
-        'time_preference',
+        'adult_confirm',
     ];
 
     /**
@@ -379,18 +380,29 @@ class Order extends BaseModel
     }
 
     /**
-     * 获取器：服务联系人
+     * 获取器：游戏平台
      * @param $value
      * @param $data
      * @return string
      */
-    public function getContactNameAttr($value, $data): string
+    public function getGamePlatformAttr($value, $data): string
     {
-        return $this->getServiceContactField($data, 'contact_name');
+        return $this->getServiceContactField($data, 'game_platform');
     }
 
     /**
-     * 获取器：服务联系电话
+     * 获取器：游戏账号ID
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getGameAccountIdAttr($value, $data): string
+    {
+        return $this->getServiceContactField($data, 'game_account_id');
+    }
+
+    /**
+     * 获取器：联系方式
      * @param $value
      * @param $data
      * @return string
@@ -401,14 +413,15 @@ class Order extends BaseModel
     }
 
     /**
-     * 获取器：时间偏好
+     * 获取器：成年人下单确认
      * @param $value
      * @param $data
-     * @return string
+     * @return int
      */
-    public function getTimePreferenceAttr($value, $data): string
+    public function getAdultConfirmAttr($value, $data): int
     {
-        return $this->getServiceContactField($data, 'time_preference');
+        $serviceContact = static::getServiceContactData($data);
+        return static::normalizeAdultConfirmValue($serviceContact['adult_confirm'] ?? 0);
     }
 
     /**
@@ -430,11 +443,79 @@ class Order extends BaseModel
      */
     public static function getServiceContactData($order): array
     {
+        return static::normalizeServiceContactData(static::getRawServiceContactData($order));
+    }
+
+    /**
+     * 获取原始服务单联系信息
+     * @param array|self $order
+     * @return array
+     */
+    private static function getRawServiceContactData($order): array
+    {
         $sourceData = $order['order_source_data'] ?? [];
         if (is_string($sourceData)) {
             $sourceData = helper::jsonDecode($sourceData) ?: [];
         }
         return (array)($sourceData['service_contact'] ?? []);
+    }
+
+    /**
+     * 统一服务单联系信息结构
+     * @param array $serviceContact
+     * @return array
+     */
+    public static function normalizeServiceContactData(array $serviceContact): array
+    {
+        return [
+            'game_platform' => trim((string)($serviceContact['game_platform'] ?? '')),
+            'game_account_id' => trim((string)($serviceContact['game_account_id'] ?? '')),
+            'contact_mobile' => trim((string)($serviceContact['contact_mobile'] ?? '')),
+            'adult_confirm' => static::normalizeAdultConfirmValue($serviceContact['adult_confirm'] ?? 0),
+        ];
+    }
+
+    /**
+     * 规范化成年人下单确认值
+     * @param mixed $value
+     * @return int
+     */
+    public static function normalizeAdultConfirmValue($value): int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+        if (is_numeric($value)) {
+            return (int)$value === 1 ? 1 : 0;
+        }
+        $normalized = strtolower(trim((string)$value));
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true) ? 1 : 0;
+    }
+
+    /**
+     * 游戏平台文案
+     * @param string $value
+     * @return string
+     */
+    public static function getServiceGamePlatformText(string $value): string
+    {
+        if ($value === 'pc') {
+            return '端游';
+        }
+        if ($value === 'mobile') {
+            return '手游';
+        }
+        return '';
+    }
+
+    /**
+     * 成年人下单确认文案
+     * @param mixed $value
+     * @return string
+     */
+    public static function getAdultConfirmText($value): string
+    {
+        return static::normalizeAdultConfirmValue($value) === 1 ? '已确认' : '未确认';
     }
 
     /**
@@ -444,13 +525,19 @@ class Order extends BaseModel
      */
     public static function isServiceOrderData($order): bool
     {
-        if ((int)($order['delivery_type'] ?? 0) === DeliveryTypeEnum::NOTHING) {
+        $serviceContact = static::getServiceContactData($order);
+        if (
+            !empty($serviceContact['game_platform'])
+            || !empty($serviceContact['game_account_id'])
+            || !empty($serviceContact['contact_mobile'])
+            || static::normalizeAdultConfirmValue($serviceContact['adult_confirm'] ?? 0) === 1
+        ) {
             return true;
         }
-        $serviceContact = static::getServiceContactData($order);
-        return !empty($serviceContact['contact_name'])
-            || !empty($serviceContact['contact_mobile'])
-            || !empty($serviceContact['time_preference']);
+        $rawServiceContact = static::getRawServiceContactData($order);
+        return !empty($rawServiceContact['contact_name'])
+            || !empty($rawServiceContact['contact_mobile'])
+            || !empty($rawServiceContact['time_preference']);
     }
 
     /**
