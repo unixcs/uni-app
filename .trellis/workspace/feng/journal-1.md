@@ -237,3 +237,38 @@ Closed the feedback/complaint MVP and homepage popup/privacy singleton content t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 收口服务订单契约与下单表单更新任务
+
+**Date**: 2026-07-10
+**Task**: 收口服务订单契约与下单表单更新任务
+**Branch**: `main`
+
+### Summary
+
+完成服务订单契约升级、商家后台搜索与历史订单软删除隐藏收口，归档父子任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c23b610` | (see git log) |
+| `bcafa2d` | (see git log) |
+| `91cdef2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
