@@ -13,21 +13,30 @@
     </view>
     <!-- 用户隐私保护提示（仅微信小程序） -->
     <!-- #ifdef MP-WEIXIN -->
-    <PrivacyPopup v-if="!isLoading" :hideTabBar="true" />
+    <PrivacyPopup v-if="!isLoading" :hideTabBar="true" @end="onPrivacyPopupEnd" />
+    <FirstLoginPopup
+      v-if="showFirstLoginPopup"
+      :body="firstLoginPopupBody"
+      :hideTabBar="true"
+      @close="handleFirstLoginPopupClose"
+    />
     <!-- #endif -->
   </view>
 </template>
 
 <script>
-  import { setCartTabBadge } from '@/core/app'
+  import { setCartTabBadge, checkLogin } from '@/core/app'
   import * as Api from '@/api/page'
+  import * as ApiUser from '@/api/user'
   import Page from '@/components/page'
   import PrivacyPopup from '@/components/privacy-popup'
+  import FirstLoginPopup from '@/components/first-login-popup'
 
   export default {
     components: {
       Page,
-      PrivacyPopup
+      PrivacyPopup,
+      FirstLoginPopup
     },
     data() {
       return {
@@ -42,7 +51,15 @@
         // 错误提示
         errorText: '',
         // 加载超时计时器
-        loadingTimer: null
+        loadingTimer: null,
+        // 微信隐私弹窗流程是否已结束
+        privacyPopupReady: false,
+        // 首页首登业务弹窗是否展示
+        showFirstLoginPopup: false,
+        // 首页首登业务弹窗正文
+        firstLoginPopupBody: '',
+        // 是否正在请求首页首登业务弹窗
+        isCheckingFirstLoginPopup: false
       }
     },
 
@@ -62,6 +79,9 @@
     onShow() {
       // 更新购物车角标
       setCartTabBadge()
+      // #ifdef MP-WEIXIN
+      this.tryShowFirstLoginPopup()
+      // #endif
     },
 
     methods: {
@@ -87,7 +107,6 @@
         }, 5000)
         Api.detail(pageId)
           .then(result => {
-            console.info('首页 page/detail 返回', result)
             // 设置页面数据
             const pageData = result && result.data && result.data.pageData ? result.data.pageData : {}
             app.page = pageData.page || {}
@@ -95,10 +114,9 @@
             // 设置顶部导航栏栏
             app.setPageBar()
           })
-          .catch(err => {
-            console.error('首页加载失败', err)
+          .catch(() => {
             app.items = []
-            app.errorText = '首页加载失败，请看控制台或网络请求'
+            app.errorText = '首页加载失败，请稍后重试'
           })
           .finally(() => {
             if (app.loadingTimer) {
@@ -116,7 +134,6 @@
       setPageBar() {
         const { page } = this
         if (!page || !page.params || !page.style) {
-          console.warn('首页 page 数据不完整', page)
           return
         }
         // 设置页面标题
@@ -142,6 +159,37 @@
             params: item.params && typeof item.params === 'object' ? item.params : {},
             data: Array.isArray(item.data) ? item.data : []
           }))
+      },
+
+      onPrivacyPopupEnd() {
+        this.privacyPopupReady = true
+        this.tryShowFirstLoginPopup()
+      },
+
+      tryShowFirstLoginPopup() {
+        if (this.isLoading || !this.privacyPopupReady || this.showFirstLoginPopup || this.isCheckingFirstLoginPopup || !checkLogin()) {
+          return
+        }
+        this.isCheckingFirstLoginPopup = true
+        ApiUser.firstLoginPopup({}, { load: false, isPrompt: false })
+          .then(result => {
+            const popup = result.data && result.data.popup ? result.data.popup : {}
+            const body = popup.body || ''
+            this.firstLoginPopupBody = body
+            this.showFirstLoginPopup = !!popup.show && !!body
+          })
+          .catch(err => {
+            if (err.result && err.result.status === 401) {
+              return
+            }
+          })
+          .finally(() => {
+            this.isCheckingFirstLoginPopup = false
+          })
+      },
+
+      handleFirstLoginPopupClose() {
+        this.showFirstLoginPopup = false
       }
 
     },

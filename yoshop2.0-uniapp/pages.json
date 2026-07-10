@@ -73,6 +73,12 @@
       }
     },
     {
+      "path": "pages/user/privacy",
+      "style": {
+        "navigationBarTitleText": "隐私协议"
+      }
+    },
+    {
       "path": "pages/article/index",
       "style": {
         "navigationBarTitleText": "资讯列表"
@@ -88,6 +94,19 @@
       "path": "pages/help/index",
       "style": {
         "navigationBarTitleText": "帮助中心"
+      }
+    },
+    {
+      "path": "pages/feedback/index",
+      "style": {
+        "navigationBarTitleText": "投诉/意见反馈",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/feedback/detail",
+      "style": {
+        "navigationBarTitleText": "反馈详情"
       }
     },
     {

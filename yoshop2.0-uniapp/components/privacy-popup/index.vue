@@ -52,12 +52,15 @@
       // 获取商城基本信息
       try {
         await this.getStoreInfo()
+        if (!this.storeInfo) {
+          this.$emit('end')
+          return
+        }
         // #ifdef MP-WEIXIN
         // 弹出隐私协议 (微信小程序端)
         this.needAuthorization()
         // #endif
       } catch (err) {
-        console.error('隐私弹窗初始化失败', err)
         this.$emit('end')
       }
     },
@@ -68,22 +71,20 @@
       async getStoreInfo() {
         await StoreModel.storeInfo()
           .then(storeInfo => this.storeInfo = storeInfo)
-          .catch(err => {
-            console.error('隐私弹窗获取店铺信息失败', err)
+          .catch(() => {
+            this.storeInfo = undefined
           })
       },
 
       // 弹出隐私协议 (微信小程序端)
       needAuthorization() {
         if (typeof uni.getPrivacySetting !== 'function') {
-          console.warn('当前环境不支持 getPrivacySetting，跳过隐私授权弹窗')
           this.$emit('end')
           return
         }
         const app = this
         uni.getPrivacySetting({
-          success({ needAuthorization, privacyContractName }) {
-            console.info('getPrivacySetting', { needAuthorization, privacyContractName })
+          success({ needAuthorization }) {
             // 需要弹出隐私协议
             if (needAuthorization) {
               app.showPrivacy = true
@@ -92,8 +93,7 @@
               app.$emit('end')
             }
           },
-          fail(err) {
-            console.error('getPrivacySetting 调用失败', err)
+          fail() {
             app.$emit('end')
           }
         })
@@ -106,7 +106,6 @@
 
       // 用户同意隐私协议事件回调
       handleAgreePrivacyAuthorization() {
-        console.info('用户已同意隐私协议')
         // 用户点击了同意，才可以调用隐私接口和组件，例如：
         // wx.getUserProfile()
         // wx.chooseImage()
@@ -115,12 +114,13 @@
 
         this.hideTabBar && uni.showTabBar()
         this.showPrivacy = false
-        this.$emit('end')
+        setTimeout(() => {
+          this.$emit('end')
+        }, 180)
       },
 
       // 用户不同意隐私协议
       handleDisagree() {
-        console.warn('用户未同意隐私协议，首页可能被遮罩层覆盖')
         this.$toast('很抱歉，请先同意后可继续使用~', 2000)
       },
 

@@ -119,6 +119,19 @@ export const asyncRouterMap = [
                 meta: { title: '主题风格', keepAlive: false, permission: ['/store/style/theme'] }
               }
             ]
+          },
+          {
+            path: '/store/content',
+            component: RouteView,
+            redirect: '/store/content/editor',
+            meta: { title: '内容编辑', keepAlive: false, permission: ['/store/content'] },
+            children: [
+              {
+                path: '/store/content/editor',
+                component: () => import(/* webpackChunkName: "store" */ '@/views/content/editor/Index'),
+                meta: { title: '首页首登弹窗与隐私协议', keepAlive: false, permission: ['/store/content/editor'] }
+              }
+            ]
           }
         ]
       },
@@ -233,7 +246,7 @@ export const asyncRouterMap = [
             component: () => import(/* webpackChunkName: "order" */ '@/views/order/refund/Detail'),
             meta: { title: '退款详情', keepAlive: false, permission: ['/order/refund/detail'] },
             hidden: true
-          },
+          }
         ]
       },
 
@@ -325,7 +338,13 @@ export const asyncRouterMap = [
             path: '/content/help/index',
             component: () => import(/* webpackChunkName: "content" */ '@/views/content/help/Index'),
             meta: { title: '帮助中心', keepAlive: false, permission: ['/content/help/index'] },
-            moduleKey: 'content-help',
+            moduleKey: 'content-help'
+          },
+          {
+            path: '/content/feedback/index',
+            component: () => import(/* webpackChunkName: "content" */ '@/views/content/feedback/Index'),
+            meta: { title: '反馈/投诉', keepAlive: false, permission: ['/content/feedback/index'] },
+            moduleKey: 'content-feedback'
           }
         ]
       },
@@ -389,7 +408,7 @@ export const asyncRouterMap = [
                 meta: { title: '充值设置', keepAlive: false, permission: ['/market/recharge/setting'] }
               }
             ]
-          },
+          }
         ]
       },
 
@@ -493,13 +512,13 @@ export const asyncRouterMap = [
             path: '/setting/customer',
             component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/Customer'),
             meta: { title: '客服设置', keepAlive: false, permission: ['/setting/customer'] },
-            moduleKey: 'setting-customer',
+            moduleKey: 'setting-customer'
           },
           {
             path: '/setting/storage',
             component: () => import(/* webpackChunkName: "setting" */ '@/views/setting/Storage'),
             meta: { title: '上传设置', keepAlive: false, permission: ['/setting/storage'] },
-            moduleKey: 'setting-storage',
+            moduleKey: 'setting-storage'
           },
           {
             path: '/setting/sms',

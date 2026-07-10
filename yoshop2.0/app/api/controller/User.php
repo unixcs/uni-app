@@ -89,4 +89,16 @@ class User extends Controller
         }
         return $this->renderSuccess('恭喜您，信息修改成功');
     }
+
+    /**
+     * 首页首登业务弹窗判断
+     * @return Json
+     * @throws BaseException
+     */
+    public function firstLoginPopup(): Json
+    {
+        $model = new UserModel;
+        $popup = $model->getFirstLoginPopup();
+        return $this->renderSuccess(compact('popup'));
+    }
 }

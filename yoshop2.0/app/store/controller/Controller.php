@@ -13,6 +13,7 @@ declare (strict_types=1);
 namespace app\store\controller;
 
 use cores\BaseController;
+use app\common\service\RuntimeBootstrapPatch;
 
 use app\store\service\Auth as AuthService;
 use app\common\service\store\User as StoreUserService;
@@ -66,6 +67,7 @@ class Controller extends BaseController
      */
     public function initialize()
     {
+        RuntimeBootstrapPatch::ensure();
         // 获取当前登录的商城ID
         $this->getStoreId();
         // 设置管理员登录信息

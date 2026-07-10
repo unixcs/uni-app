@@ -13,6 +13,7 @@ declare (strict_types=1);
 namespace app\api\controller;
 
 use cores\BaseController;
+use app\common\service\RuntimeBootstrapPatch;
 use app\api\model\User as UserModel;
 use app\api\model\Store as StoreModel;
 use app\api\service\User as UserService;
@@ -40,6 +41,7 @@ class Controller extends BaseController
      */
     protected function initialize()
     {
+        RuntimeBootstrapPatch::ensure();
         // 当前的商城ID
         $this->getStoreId();
         // 验证当前商城状态

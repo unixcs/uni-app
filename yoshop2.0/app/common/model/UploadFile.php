@@ -100,4 +100,24 @@ class UploadFile extends BaseModel
             ->where('is_delete', '=', 0)
             ->column('file_id');
     }
+
+    /**
+     * 过滤当前用户可使用的图片ID集
+     * @param array $fileIds
+     * @param int $uploaderId
+     * @param int|null $storeId
+     * @return array
+     */
+    public static function filterUserImageIds(array $fileIds, int $uploaderId, int $storeId = null): array
+    {
+        if (empty($fileIds) || $uploaderId <= 0) {
+            return [];
+        }
+        return (new static)->where('file_id', 'in', $fileIds)
+            ->where('store_id', '=', $storeId ?: self::$storeId)
+            ->where('uploader_id', '=', $uploaderId)
+            ->where('file_type', '=', FileTypeEnum::IMAGE)
+            ->where('is_delete', '=', 0)
+            ->column('file_id');
+    }
 }

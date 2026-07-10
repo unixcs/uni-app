@@ -42,11 +42,14 @@ class Setting extends SettingModel
         $model = self::detail($key) ?: $this;
         // 删除小程序设置缓存
         Cache::delete('wxapp_setting_' . self::$storeId);
+        $allowFields = ['enabled', 'app_id', 'app_secret', 'enableShipping', 'firstLoginPopupEnabled', 'firstLoginPopupBody', 'privacyAgreementContent'];
+        $currentValues = $model && isset($model['values']) ? (array)$model['values'] : self::getConfigBasic(self::$storeId);
+        $nextValues = array_merge($currentValues, helper::pick($values, $allowFields));
         // 保存设置
         return $model->save([
             'key' => $key,
             'describe' => $this->describe[$key],
-            'values' => helper::pick($values, ['enabled', 'app_id', 'app_secret', 'enableShipping']),
+            'values' => $nextValues,
             'update_time' => time(),
             'store_id' => self::$storeId,
         ]);

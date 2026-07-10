@@ -14,6 +14,7 @@ namespace app\api\controller;
 
 use think\response\Json;
 use app\api\service\Setting as SettingService;
+use app\api\model\wxapp\Setting as WxappSettingModel;
 
 /**
  * 商城设置控制器
@@ -34,5 +35,18 @@ class Setting extends Controller
         $service = new SettingService;
         $setting = $service->getPublic();
         return $this->renderSuccess(compact('setting'));
+    }
+
+    /**
+     * 隐私协议内容
+     * @return Json
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public function privacyAgreement(): Json
+    {
+        $content = WxappSettingModel::getPrivacyAgreementContent();
+        return $this->renderSuccess(compact('content'));
     }
 }

@@ -77,6 +77,37 @@ class Setting extends BaseModel
     }
 
     /**
+     * 获取首页首登弹窗配置
+     * @param int|null $storeId
+     * @return array
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public static function getFirstLoginPopup(?int $storeId = null): array
+    {
+        $values = static::getConfigBasic($storeId);
+        return [
+            'enabled' => (bool)($values['firstLoginPopupEnabled'] ?? false),
+            'body' => (string)($values['firstLoginPopupBody'] ?? ''),
+        ];
+    }
+
+    /**
+     * 获取隐私协议内容
+     * @param int|null $storeId
+     * @return string
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public static function getPrivacyAgreementContent(?int $storeId = null): string
+    {
+        $values = static::getConfigBasic($storeId);
+        return (string)($values['privacyAgreementContent'] ?? '');
+    }
+
+    /**
      * 获取是否开启发货信息管理
      * @param int|null $storeId
      * @return bool
@@ -154,6 +185,12 @@ class Setting extends BaseModel
                     'app_secret' => '',
                     // 是否开启发货信息管理
                     'enableShipping' => false,
+                    // 是否开启首页首登业务弹窗
+                    'firstLoginPopupEnabled' => false,
+                    // 首页首登业务弹窗正文
+                    'firstLoginPopupBody' => '',
+                    // 隐私协议内容
+                    'privacyAgreementContent' => '',
                 ]
             ]
         ];

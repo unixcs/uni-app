@@ -219,18 +219,19 @@ export const urlUpload = function(requestInfo, dataFactory) {
 			let fileList = new Array;
 			fileUpload(0);
 
-			function fileUpload(i) {
-				let item = requestInfo.files[i];
-				let fileData = {
-					fileIndex: i,
-					files: requestInfo.files,
-					...item
-				};
-				let config = {
-					url: requestInfo.url,
-					filePath: item.path,
-					header: requestInfo.header, //加入请求头
-					name: requestInfo.name || "file",
+				function fileUpload(i) {
+					let item = requestInfo.files[i];
+					const filePath = item && (item.path || item.tempFilePath);
+					let fileData = {
+						fileIndex: i,
+						files: requestInfo.files,
+						...item
+					};
+					let config = {
+						url: requestInfo.url,
+						filePath: filePath,
+						header: requestInfo.header, //加入请求头
+						name: requestInfo.name || "file",
 					success: (response) => {
 						//是否用外部的数据处理方法
 						if (requestInfo.isFactory && dataFactory) {

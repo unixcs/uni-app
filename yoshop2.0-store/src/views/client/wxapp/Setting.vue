@@ -38,7 +38,6 @@
             <small>登录微信小程序平台，在功能菜单中查找是否存在《发货信息管理》，如果存在则需开启</small>
           </p>
         </a-form-item>
-
         <a-divider orientation="left">授权域名设置</a-divider>
         <a-form-item
           v-for="(item , index) in domainList"
@@ -90,7 +89,7 @@ const domainList = [
   {
     name: 'downloadFile',
     protocol: 'https'
-  },
+  }
 ]
 
 export default {
@@ -111,7 +110,7 @@ export default {
       // 当前记录详情
       record: {},
       // 服务端域名
-      domain: '',
+      domain: ''
     }
   },
   // 初始化数据
@@ -132,7 +131,9 @@ export default {
           // 设置默认值
           this.setFieldsValue()
         })
-        .finally(() => this.isLoading = false)
+        .finally(() => {
+          this.isLoading = false
+        })
     },
 
     // 设置默认值
@@ -145,7 +146,7 @@ export default {
 
     // 复制链接地址
     handleCopyLink (url) {
-      this.$copyText(url).then(res => {
+      this.$copyText(url).then(() => {
         this.$message.success('复制成功', 0.8)
       })
     },
@@ -166,7 +167,9 @@ export default {
       this.isLoading = true
       Api.update(this.key, { form: values })
         .then(result => this.$message.success(result.message, 1.5))
-        .finally(() => this.isLoading = false)
+        .finally(() => {
+          this.isLoading = false
+        })
     }
 
   }

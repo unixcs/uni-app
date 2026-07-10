@@ -13,6 +13,7 @@ declare (strict_types=1);
 namespace app\api\model;
 
 use think\facade\Cache;
+use app\api\model\wxapp\Setting as WxappSettingModel;
 use app\api\service\User as UserService;
 use app\api\model\UserOauth as UserOauthModel;
 use app\common\model\User as UserModel;
@@ -107,6 +108,41 @@ class User extends UserModel
         $data['nick_name'] =  $form['nickName'] ?: $userInfo['nick_name'];
         // 更新用户记录
         return $userInfo->save($data);
+    }
+
+    /**
+     * 首页首登业务弹窗
+     * @return array
+     * @throws BaseException
+     * @throws \think\db\exception\DataNotFoundException
+     * @throws \think\db\exception\DbException
+     * @throws \think\db\exception\ModelNotFoundException
+     */
+    public function getFirstLoginPopup(): array
+    {
+        $userInfo = UserService::getCurrentLoginUser(true);
+        $popup = WxappSettingModel::getFirstLoginPopup();
+        $body = (string)$popup['body'];
+        if (!(bool)$popup['enabled'] || trim($body) === '' || (int)$userInfo['first_login_popup_seen_time'] > 0) {
+            return [
+                'show' => false,
+                'body' => '',
+            ];
+        }
+        $updatedRows = $this->where('user_id', '=', (int)$userInfo['user_id'])
+            ->where('is_delete', '=', 0)
+            ->where('first_login_popup_seen_time', '=', 0)
+            ->update(['first_login_popup_seen_time' => time()]);
+        if (!$updatedRows) {
+            return [
+                'show' => false,
+                'body' => '',
+            ];
+        }
+        return [
+            'show' => true,
+            'body' => $body,
+        ];
     }
 
     /**

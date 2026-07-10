@@ -175,6 +175,8 @@
     { id: 'points', name: '我的积分', icon: 'jifen', type: 'link', url: 'pages/points/log', moduleKey: 'market-points' },
     { id: 'refund', name: '售后/退款', icon: 'shouhou', type: 'link', url: 'pages/refund/index' },
     { id: 'orderCenter', name: '订单中心', icon: 'order-c', type: 'link', url: 'pages/order/center' },
+    { id: 'feedback', name: '投诉入口', icon: 'bangzhu', type: 'link', url: 'pages/feedback/index' },
+    { id: 'privacyAgreement', name: '隐私协议', icon: 'link', type: 'link', url: 'pages/user/privacy' },
     { id: 'help', name: '服务政策', icon: 'bangzhu', type: 'link', url: 'pages/help/index', moduleKey: 'content-help' },
   ]
 
