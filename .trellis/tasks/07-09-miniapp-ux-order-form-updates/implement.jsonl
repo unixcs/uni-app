@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/07-09-miniapp-ux-order-form-updates/prd.md","reason":"保留父任务总需求、子任务映射、推荐顺序与最终集成验收口径。"}
+{"file":".trellis/tasks/07-09-miniapp-ux-order-form-updates/design.md","reason":"说明父任务的依赖协调角色与整体交付拆分方式。"}
+{"file":".trellis/tasks/07-09-miniapp-ux-order-form-updates/implement.md","reason":"记录 3 个子任务全部完成后的最终集成收口结论。"}
+{"file":".trellis/spec/frontend/feedback-complaint-contracts.md","reason":"父任务集成面引用反馈/投诉契约。"}
+{"file":".trellis/spec/frontend/wxapp-singleton-content-contracts.md","reason":"父任务集成面引用首页弹窗/隐私协议契约。"}
+{"file":".trellis/spec/frontend/service-order-contracts.md","reason":"父任务集成面引用服务订单契约与历史清理契约。"}

@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/07-09-service-order-contract-search-soft-delete-hide/prd.md","reason":"确认服务订单契约、后台搜索与历史 soft-delete hide 的完整验收边界。"}
+{"file":".trellis/tasks/07-09-service-order-contract-search-soft-delete-hide/design.md","reason":"对齐 checkout/display/search/export/cleanup 的跨层契约与维护窗口策略。"}
+{"file":".trellis/tasks/07-09-service-order-contract-search-soft-delete-hide/implement.md","reason":"记录本轮实施、验证、维护窗口 soft-delete 执行结果与恢复边界。"}
+{"file":".trellis/spec/frontend/service-order-contracts.md","reason":"沉淀服务订单共享 checkout 契约、后台搜索语义和历史清理命令契约。"}

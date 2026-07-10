@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/service-order-contracts.md","reason":"复核服务订单 checkout/display/search/export/cleanup 的最终契约。"}
+{"file":".trellis/spec/frontend/index.md","reason":"确认 service-order 契约已纳入 frontend spec 索引。"}

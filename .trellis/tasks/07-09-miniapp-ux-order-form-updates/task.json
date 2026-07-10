@@ -1,0 +1,30 @@
+{
+  "id": "miniapp-ux-order-form-updates",
+  "name": "miniapp-ux-order-form-updates",
+  "title": "Miniapp UX and order form updates",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "feng",
+  "assignee": "feng",
+  "createdAt": "2026-07-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-09-homepage-popup-privacy-singleton",
+    "07-09-feedback-complaint-mvp",
+    "07-09-service-order-contract-search-soft-delete-hide"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
