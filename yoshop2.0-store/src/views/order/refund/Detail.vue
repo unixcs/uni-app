@@ -2,8 +2,24 @@
   <div>
     <!-- 加载中 -->
     <a-spin :spinning="isLoading" />
+    <a-alert
+      v-if="!isLoading && loadError"
+      type="error"
+      showIcon
+      message="售后单详情加载失败"
+      :description="loadError"
+      class="mt-20"
+    />
     <!-- 售后单内容 -->
-    <div v-if="!isLoading" class="detail-content">
+    <div v-if="!isLoading && !loadError" class="detail-content">
+      <a-alert
+        v-if="isIosAppleRefundMode"
+        type="warning"
+        showIcon
+        :message="record.ios_refund_risk_status >= 20 ? 'App Store退款成功' : 'App Store退款流程中，原订单服务已冻结'"
+        :description="refundGuidanceText || '商家审核不代表Apple最终决定，原订单不会恢复履约。'"
+        class="mb-20"
+      />
       <!-- 售后单信息 -->
       <a-card :bordered="false">
         <!-- 订单操作 -->
@@ -56,8 +72,9 @@
           <a-descriptions-item label="售后单状态">
             <a-tag
               :color="renderRefundStatusColor(record.status)"
-            >{{ RefundStatusEnum[record.status].name }}</a-tag>
+            >{{ refundStateText }}</a-tag>
           </a-descriptions-item>
+          <a-descriptions-item v-if="isIosAppleRefundMode" label="退款路径">用户在 App Store 申请退款</a-descriptions-item>
           <a-descriptions-item label="申请时间">{{ record.create_time }}</a-descriptions-item>
         </a-descriptions>
         <a-divider class="o-divider" />
@@ -66,7 +83,7 @@
           <a-descriptions-item label="审核状态 (商家)">
             <a-tag
               :color="renderAuditStatusColor(record.audit_status)"
-            >{{ AuditStatusEnum[record.audit_status].name }}</a-tag>
+            >{{ getEnumName(AuditStatusEnum, record.audit_status) }}</a-tag>
           </a-descriptions-item>
           <a-descriptions-item
             v-if="record.audit_status == AuditStatusEnum.REJECTED.value"
@@ -74,7 +91,19 @@
           >
             <span>{{ record.refuse_desc }}</span>
           </a-descriptions-item>
+          <a-descriptions-item v-if="refundGuidanceText" label="退款说明">
+            <span>{{ refundGuidanceText }}</span>
+          </a-descriptions-item>
         </a-descriptions>
+      </a-card>
+
+      <a-card v-if="iosRefundTimeline.length" class="mt-20" :bordered="false" title="Apple问询时间线">
+        <a-timeline>
+          <a-timeline-item v-for="item in iosRefundTimeline" :key="item.inquiry_id" :color="Number(item.result_code) === 0 ? 'green' : 'red'">
+            <p>{{ formatInquiryTime(item.received_at) }}｜{{ item.result_info || '--' }}</p>
+            <p class="c-muted-1">{{ item.evidence || '无补充证据' }}</p>
+          </a-timeline-item>
+        </a-timeline>
       </a-card>
 
       <!-- 买家申请原因 -->
@@ -124,6 +153,7 @@
 
 <script>
 import { assignment } from '@/utils/util'
+import { getEnumName } from '@/utils/enum'
 import * as Api from '@/api/order/refund'
 import { GoodsItem, UserItem } from '@/components/Table'
 import { AuditStatusEnum, RefundStatusEnum, RefundTypeEnum } from '@/common/enum/order/refund'
@@ -173,6 +203,8 @@ export default {
     return {
       // 正在加载
       isLoading: true,
+      // 加载错误
+      loadError: '',
       // 售后单ID
       orderRefundId: null,
       // 售后单详情
@@ -191,6 +223,20 @@ export default {
     },
     canShowAuditAction () {
       return this.$auth('/order/refund/detail') || this.$auth('/order/refund/index')
+    },
+    isIosAppleRefundMode () {
+      return !!this.record.ios_apple_refund_required
+    },
+    iosRefundTimeline () {
+      return Array.isArray(this.record.ios_refund_inquiry_timeline) ? this.record.ios_refund_inquiry_timeline : []
+    },
+    refundStateText () {
+      const record = this.record || {}
+      const fallback = RefundStatusEnum[record.status]
+      return record.display_state_text || record.service_state_text || record.state_text || (fallback ? fallback.name : '--')
+    },
+    refundGuidanceText () {
+      return (this.record && this.record.refund_guidance) || ''
     }
   },
   beforeCreate () {
@@ -208,6 +254,12 @@ export default {
     this.handleRefresh()
   },
   methods: {
+    formatInquiryTime (value) {
+      const timestamp = Number(value || 0)
+      if (timestamp <= 0) return '--'
+      return new Date(timestamp * 1000).toLocaleString('zh-CN', { hour12: false })
+    },
+    getEnumName,
 
     // 刷新页面
     handleRefresh () {
@@ -219,13 +271,28 @@ export default {
     getDetail () {
       const { orderRefundId } = this
       this.isLoading = true
-      Api.detail({ orderRefundId })
+      this.loadError = ''
+      return Api.detail({ orderRefundId })
         .then(result => {
-          // 当前记录
-          this.record = result.data.detail
+          const detail = result && result.data ? result.data.detail : null
+          if (!detail || !detail.order_refund_id) {
+            throw new Error('接口未返回有效售后单详情，请刷新重试')
+          }
+          // 可选关联使用空对象兜底，避免历史数据缺失中断整页渲染
+          this.record = {
+            ...detail,
+            orderData: detail.orderData || {},
+            user: detail.user || {},
+            orderGoods: detail.orderGoods || {}
+          }
           this.isServiceOrder = true
-          // 商品列表
           this.goodsList = [this.record.orderGoods]
+        })
+        .catch(error => {
+          this.record = {}
+          this.goodsList = []
+          this.isServiceOrder = false
+          this.loadError = (error && error.message) || '售后单详情请求失败，请刷新重试'
         })
         .finally(() => {
           this.isLoading = false

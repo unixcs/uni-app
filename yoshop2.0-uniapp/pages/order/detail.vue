@@ -1,5 +1,10 @@
 <template>
-  <view v-if="!isLoading" class="container" :style="appThemeStyle">
+  <view class="container" :style="appThemeStyle">
+    <view v-if="!isLoading && loadError" class="load-error i-card">
+      <text>{{ loadError }}</text>
+      <view class="retry-btn" @click="getOrderDetail()">重新加载</view>
+    </view>
+    <block v-if="!isLoading && !loadError">
     <view class="header">
       <view class="order-status">
         <view class="status-text"><text>{{ getOrderStateText(order) }}</text></view>
@@ -47,7 +52,9 @@
 
       <view v-if="hasRefundInfo" class="refund-info i-card">
         <view class="card-title">退款反馈</view>
-        <view class="info-item"><view class="item-lable">状态</view><view class="item-content"><text>{{ refundInfo.service_state_text || '--' }}</text></view></view>
+        <view class="info-item"><view class="item-lable">状态</view><view class="item-content"><text>{{ refundDisplayText || '--' }}</text></view></view>
+        <view v-if="refundInfo.refund_guidance" class="info-item"><view class="item-lable">退款说明</view><view class="item-content"><text>{{ refundInfo.refund_guidance }}</text></view></view>
+        <view v-if="shouldShowSubmittedIosGuide" class="info-item ios-guide-item"><IosAppleRefundGuide :submitted="true" /></view>
         <view v-if="refundInfo.apply_desc" class="info-item"><view class="item-lable">退款原因</view><view class="item-content"><text>{{ refundInfo.apply_desc }}</text></view></view>
         <view v-if="refundInfo.refund_money !== '' && refundInfo.refund_money != null" class="info-item"><view class="item-lable">退款金额</view><view class="item-content"><text>￥{{ refundInfo.refund_money }}</text></view></view>
         <view v-if="refundInfo.refuse_desc" class="info-item"><view class="item-lable">处理备注</view><view class="item-content"><text>{{ refundInfo.refuse_desc }}</text></view></view>
@@ -58,18 +65,21 @@
       <view class="btn-wrapper">
         <block v-if="canCancelOrder"><view class="btn-item" @click="onCancel(order.order_id)">取消</view></block>
         <block v-if="canPayOrder"><view class="btn-item active" @click="onPay(order.order_id)">去支付</view></block>
-        <block v-if="canApplyRefund"><view class="btn-item active" @click="onRefund()">退款</view></block>
+        <block v-if="canApplyRefund"><view class="btn-item active" @click="onRefund()">{{ refundActionText }}</view></block>
       </view>
     </view>
+    </block>
   </view>
 </template>
 
 <script>
+  import IosAppleRefundGuide from '@/components/refund/IosAppleRefundGuide.vue'
   import { OrderStatusEnum, PayStatusEnum } from '@/common/enum/order'
   import RefundStatusEnum from '@/common/enum/order/refund/RefundStatus'
   import * as OrderApi from '@/api/order'
 
   export default {
+    components: { IosAppleRefundGuide },
     data() {
       return {
         OrderStatusEnum,
@@ -77,6 +87,7 @@
         RefundStatusEnum,
         orderId: null,
         isLoading: true,
+        loadError: '',
         order: {},
         refundInfo: {},
         setting: {},
@@ -118,7 +129,7 @@
       },
       hasRefundInfo() {
         const info = this.refundInfo || {}
-        return !!(info.order_refund_id || info.state_text || info.service_state_text || info.apply_desc || info.refuse_desc)
+        return !!(info.order_refund_id || info.state_text || info.service_state_text || info.display_state_text || info.refund_guidance || info.apply_desc || info.refuse_desc || info.ios_apple_refund_required)
       },
       hasPrimaryRefundState() {
         const info = this.refundInfo || {}
@@ -127,6 +138,27 @@
       hasActiveRefund() {
         const info = this.refundInfo || {}
         return !!info.order_refund_id && Number(info.state) === this.RefundStatusEnum.NORMAL.value
+      },
+      isIosAppleRefundMode() {
+        const actionFlags = (this.order && this.order.action_flags) || {}
+        if (typeof actionFlags.ios_apple_refund_required !== 'undefined') {
+          return actionFlags.ios_apple_refund_required === true || actionFlags.ios_apple_refund_required === 1
+        }
+        return !!this.refundInfo && (this.refundInfo.ios_apple_refund_required === true || this.refundInfo.ios_apple_refund_required === 1)
+      },
+      refundActionText() {
+        return '退款'
+      },
+      shouldShowSubmittedIosGuide() {
+        return this.isIosAppleRefundMode && [
+          'local_refund_submitted',
+          'merchant_approved_apply_required',
+          'merchant_approved_reapply_required'
+        ].includes(this.refundInfo.display_state)
+      },
+      refundDisplayText() {
+        const info = this.refundInfo || {}
+        return info.display_state_text || info.service_state_text || info.state_text || ''
       },
       showFooterActions() {
         return this.canCancelOrder || this.canPayOrder || this.canApplyRefund
@@ -150,17 +182,26 @@
     methods: {
       getOrderDetail(canReset = false) {
         this.isLoading = true
-        OrderApi.detail(this.orderId).then(result => {
-          this.order = result.data.order || {}
-          this.setting = result.data.setting || {}
-          this.refundInfo = this.normalizeRefundInfo(this.order)
-          this.isLoading = false
-        })
+        this.loadError = ''
+        OrderApi.detail(this.orderId)
+          .then(result => {
+            const order = result && result.data ? result.data.order : null
+            if (!order || !order.order_id) throw new Error('订单详情数据无效')
+            this.order = order
+            this.setting = result.data.setting || {}
+            this.refundInfo = this.normalizeRefundInfo(this.order)
+          })
+          .catch(() => {
+            this.order = {}
+            this.refundInfo = {}
+            this.loadError = '订单详情加载失败，请稍后重试'
+          })
+          .finally(() => { this.isLoading = false })
         canReset && uni.$emit('syncRefresh', true, true)
       },
       getOrderStateText(order) {
         if (!order || !order.order_id) return '--'
-        if (this.hasPrimaryRefundState) return this.refundInfo.service_state_text || this.refundInfo.state_text || '--'
+        if (this.hasPrimaryRefundState) return this.refundInfo.display_state_text || this.refundInfo.service_state_text || this.refundInfo.state_text || '--'
         return order.service_state_text || order.state_text || '--'
       },
       normalizeRefundInfo(order) {
@@ -171,6 +212,16 @@
           state_text: source.state_text || '',
           service_state: source.service_state || '',
           service_state_text: source.service_state_text || '',
+          display_state: source.display_state || '',
+          display_state_text: source.display_state_text || '',
+          refund_entry_mode: source.refund_entry_mode || '',
+          refund_guidance: source.refund_guidance || '',
+          ios_apple_refund_required: !!source.ios_apple_refund_required,
+          ios_refund_risk_status: Number(source.ios_refund_risk_status || 0),
+          ios_refund_risk_text: source.ios_refund_risk_text || '',
+          ios_refund_inquiry_received: !!source.ios_refund_inquiry_received,
+          latest_ios_refund_inquiry: source.latest_ios_refund_inquiry || null,
+          can_cancel: source.can_cancel === true,
           apply_desc: source.apply_desc || '',
           refuse_desc: source.refuse_desc || '',
           refund_money: source.refund_money == null ? '' : source.refund_money,
@@ -222,6 +273,7 @@
 </style>
 <style lang="scss" scoped>
   .container { padding-bottom: calc(env(safe-area-inset-bottom) + 106rpx + 6rpx); }
+  .load-error { margin-top: 30rpx; color: #666; text-align: center; .retry-btn { display: inline-block; margin-top: 24rpx; padding: 12rpx 30rpx; border: 1rpx solid #c1c1c1; border-radius: 28rpx; color: #333; } }
   .header { display: flex; justify-content: space-between; background-color: #e8c269; height: 280rpx; padding: 56rpx 30rpx 0; .order-status { display: flex; align-items: center; height: 128rpx; .status-text { color: #fff; font-size: 38rpx; font-weight: bold; } } .next-action { display: flex; align-items: center; height: 128rpx; .action-btn { min-width: 152rpx; height: 56rpx; padding: 0 30rpx; background-color: #fff; border-radius: 28rpx; color: #c7a157; display: flex; justify-content: center; align-items: center; } } }
   .card-area { margin-top: -50rpx; }
   .i-card { background: #fff; padding: 24rpx; width: 94%; box-shadow: 0 1rpx 5rpx 0 rgba(0,0,0,.05); margin: 0 auto 20rpx; border-radius: 20rpx; }

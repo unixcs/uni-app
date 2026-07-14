@@ -99,13 +99,14 @@
                         <span class="f-13">商家审核：</span>
                         <a-tag
                           :color="renderAuditStatusColor(item.audit_status)"
-                        >{{ AuditStatusEnum[item.audit_status].name }}</a-tag>
+                        >{{ getEnumName(AuditStatusEnum, item.audit_status) }}</a-tag>
                       </p>
                     </td>
                     <td>
                       <a-tag
                         :color="renderRefundStatusColor(item.status)"
-                      >{{ RefundStatusEnum[item.status].name }}</a-tag>
+                      >{{ getRefundStateText(item) }}</a-tag>
+                      <p v-if="item.ios_apple_refund_required" class="mt-5"><a-tag color="red">退款来源：App Store｜{{ item.ios_refund_risk_text || '服务冻结中' }}</a-tag></p>
                     </td>
                     <td>
                       <div class="actions">
@@ -145,6 +146,7 @@
 <script>
 import { Empty } from 'ant-design-vue'
 import { inArray, assignment } from '@/utils/util'
+import { getEnumName } from '@/utils/enum'
 import * as Api from '@/api/order/refund'
 import { GoodsItem, UserItem } from '@/components/Table'
 import { AuditStatusEnum, RefundStatusEnum, RefundTypeEnum } from '@/common/enum/order/refund'
@@ -241,6 +243,7 @@ export default {
     this.init()
   },
   methods: {
+    getEnumName,
 
     // 初始化页面
     init () {
@@ -283,6 +286,11 @@ export default {
         [RefundStatusEnum.CANCELLED.value]: 'red'
       }
       return ColorEnum[status]
+    },
+
+    getRefundStateText (item) {
+      if (!item) return '--'
+      return item.display_state_text || item.service_state_text || item.state_text || getEnumName(RefundStatusEnum, item.status)
     },
 
     /**

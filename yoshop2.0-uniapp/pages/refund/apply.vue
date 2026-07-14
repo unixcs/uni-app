@@ -1,5 +1,10 @@
 <template>
-  <view v-if="!isLoading" class="container" :style="appThemeStyle">
+  <view class="container" :style="appThemeStyle">
+    <view v-if="!isLoading && loadError" class="load-error b-f">
+      <text>{{ loadError }}</text>
+      <view class="retry-btn" @click="getGoodsDetail()">重新加载</view>
+    </view>
+    <block v-if="!isLoading && !loadError">
 
     <!-- 商品详情 -->
     <view class="goods-detail b-f dis-flex flex-dir-row">
@@ -23,6 +28,11 @@
       </view>
     </view>
 
+    <view v-if="isIosAppleRefundMode" class="row-guidance b-f m-top20">
+      <view class="row-title">退款说明</view>
+      <IosAppleRefundGuide />
+    </view>
+
     <!-- 退款原因 -->
     <view class="row-textarea b-f m-top20">
       <view class="row-title">退款原因</view>
@@ -39,7 +49,7 @@
     </view>
 
     <!-- 上传凭证 -->
-    <view class="row-voucher b-f m-top20">
+    <view v-if="!isIosAppleRefundMode" class="row-voucher b-f m-top20">
       <view class="row-title">上传凭证 (最多6张)</view>
       <view class="image-list">
         <!-- 图片列表 -->
@@ -58,24 +68,28 @@
     <!-- 底部操作按钮 -->
     <view class="footer-fixed">
       <view class="btn-wrapper">
-        <view class="btn-item btn-item-main" :class="{ disabled }" @click="handleSubmit()">提交退款申请</view>
+        <view class="btn-item btn-item-main" :class="{ disabled }" @click="handleSubmit()">{{ submitButtonText }}</view>
       </view>
     </view>
 
+    </block>
   </view>
 </template>
 
 <script>
   import * as UploadApi from '@/api/upload'
   import * as RefundApi from '@/api/refund'
+  import IosAppleRefundGuide from '@/components/refund/IosAppleRefundGuide.vue'
 
   const maxImageLength = 6
 
   export default {
+    components: { IosAppleRefundGuide },
     data() {
       return {
         // 正在加载
         isLoading: true,
+        loadError: '',
         // 订单商品id
         orderGoodsId: null,
         // 订单商品详情
@@ -107,17 +121,36 @@
       this.getGoodsDetail()
     },
 
+    computed: {
+      isIosAppleRefundMode() {
+        return this.goods.ios_apple_refund_required === true || this.goods.ios_apple_refund_required === 1
+      },
+      refundGuidanceText() {
+        return this.goods.refund_guidance || 'iOS 订单由 Apple 处理退款，商家无法直接原路退款。请访问 reportaproblem.apple.com 申请。'
+      },
+      submitButtonText() {
+        return '提交退款申请'
+      }
+    },
+
     methods: {
 
       // 获取订单商品详情
       getGoodsDetail() {
         const app = this
         app.isLoading = true
+        app.loadError = ''
         RefundApi.goods(app.orderGoodsId)
           .then(result => {
-            app.goods = result.data.goods
-            app.isLoading = false
+            const goods = result && result.data ? result.data.goods : null
+            if (!goods || !goods.order_goods_id) throw new Error('退款信息数据无效')
+            app.goods = goods
           })
+          .catch(() => {
+            app.goods = {}
+            app.loadError = '退款信息加载失败，请稍后重试'
+          })
+          .finally(() => { app.isLoading = false })
       },
 
       // 选择图片
@@ -164,12 +197,20 @@
       // 表单提交
       handleSubmit() {
         const app = this
-        const { imageList } = app
+        if (app.loadError || !app.goods.order_goods_id) {
+          app.$toast('退款信息尚未加载完成，请重新加载')
+          return false
+        }
+        if (app.isIosAppleRefundMode) {
+          app.imageList = []
+          app.formData.images = []
+        }
+        const imageList = app.isIosAppleRefundMode ? [] : app.imageList
         // 判断是否重复提交
         if (app.disabled === true) return false
         // 表单验证
         if (!app.formData.content.trim().length) {
-          app.$toast('请填写退款原因')
+          app.$toast(app.isIosAppleRefundMode ? '请填写退款说明，便于售后跟进' : '请填写退款原因')
           return false
         }
         // 按钮禁用
@@ -193,7 +234,9 @@
       // 提交到后端
       onSubmit() {
         const app = this
-        RefundApi.apply(app.orderGoodsId, app.formData)
+        const payload = { ...app.formData }
+        if (app.isIosAppleRefundMode) delete payload.images
+        RefundApi.apply(app.orderGoodsId, payload)
           .then(result => {
             app.$toast(result.message)
             setTimeout(() => {
@@ -237,6 +280,33 @@
   .row-title {
     color: #888;
     margin-bottom: 20rpx;
+  }
+
+  .load-error {
+    margin: 30rpx 20rpx;
+    padding: 40rpx 20rpx;
+    text-align: center;
+    color: #666;
+
+    .retry-btn { display: inline-block; margin-top: 24rpx; padding: 12rpx 30rpx; border: 1rpx solid #c1c1c1; border-radius: 28rpx; color: #333; }
+  }
+
+  .row-guidance {
+    padding: 24rpx 20rpx;
+
+    .guidance-text {
+      font-size: 28rpx;
+      line-height: 1.6;
+      color: #333;
+    }
+
+    .guidance-subtext {
+      display: block;
+      margin-top: 16rpx;
+      font-size: 24rpx;
+      line-height: 1.6;
+      color: #999;
+    }
   }
 
   // 商品信息

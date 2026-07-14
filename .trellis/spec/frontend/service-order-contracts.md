@@ -226,6 +226,124 @@
 - Require an explicit cutoff time and default to `dry-run`.
 - Hide historical service orders through soft delete only, with a backup written before mutation.
 
+
+---
+
+## Scenario: iOS Apple service-refund review, lock, and projection contract
+
+### 1. Scope / Trigger
+- Applies only to iOS Apple virtual-payment service orders with a local refund request, merchant review, Apple inquiry, irreversible service lock, or final refund result.
+- Android, non-Apple virtual payments, and ordinary payments continue to use their existing flows.
+
+### 2. Signatures
+The backend is authoritative for these projections:
+
+```text
+ios_apple_refund_required: boolean
+ios_refund_risk_status: 0 | 10 | 20
+ios_refund_risk_text: string
+ios_refund_inquiry_received: boolean
+merchant_refund_review_status: 0 | 10 | 20 | null
+refund_display_state: string
+refund_display_state_text: string
+refund_guidance: string
+latest_ios_refund_inquiry: object | null
+action_flags.can_cancel: boolean
+action_flags.can_start_service: boolean
+action_flags.can_complete_service: boolean
+```
+
+The UI must not infer risk from device type, elapsed time, screenshots, truthy strings, or the mere presence of a generic refund record.
+
+### 3. Contracts
+
+#### Customer projection
+- `refunded` has the highest display priority and shows “已退款”.
+- A not-started local request shows “退款申请已提交，请前往 App Store 申请退款” and the existing Apple guide.
+- An in-progress order with review `WAIT` shows “退款申请已提交，等待商家审核中，请耐心等候” and hides the Apple guide.
+- Review `REVIEWED` with no inquiry shows “商家已同意退款，请前往 App Store 申请退款”.
+- Review `REVIEWED` after the latest inquiry recommended rejection shows “商家已同意退款，请重新前往 App Store 尝试提交申请”; it must not promise that Apple will accept another request or issue a refund.
+- A latest inquiry that recommends refund shows “等待 App Store 退款处理”.
+- Review `REJECTED` shows “商家已驳回您的退款申请，如有疑问请联系客服”. If an Apple inquiry exists, also explain that merchant rejection is not an Apple decision and that the original order has stopped fulfillment.
+- Keep the entry label “退款” and submit label “提交退款申请”. Hide evidence upload for iOS.
+- Every iOS service-refund state has `can_cancel=false`; do not add a cancellation UI or route.
+
+#### Merchant projection
+- Add iOS review/risk labels inside the existing order status area; do not add a table column, menu, or message center.
+- Order detail shows a prominent risk notice with first/latest inquiry time, refund reason, merchant review, each server recommendation, service lock, and final Apple result.
+- Refund list/detail shows App Store source, merchant review, lock state, and inquiry timeline using existing layout areas.
+- Start/complete buttons consume backend action flags. Merchant rejection never re-enables the original order.
+
+#### Data-loading boundary
+- Lists receive batch-projected refund, final-trade, and latest-inquiry summaries for the current page.
+- Details load one inquiry timeline for the selected order.
+- Vue computed/render paths must not issue APIs, and model accessors must not introduce per-row database lookups.
+
+### 4. Validation & Error Matrix
+| Condition | UI / API projection |
+|---|---|
+| Eligible iOS order before apply | keep the existing refund entry; no Apple-waiting state |
+| Local apply before service | LOCKED, Apple guide visible, `can_cancel=false` |
+| Local apply during service, WAIT | review-waiting text, Apple guide hidden, service actions false |
+| Merchant REJECTED | rejection text; service actions remain false |
+| Merchant REJECTED after inquiry | rejection text plus Apple-result-unknown/service-stopped explanation |
+| Merchant REVIEWED before inquiry | first App Store application guidance |
+| Merchant REVIEWED after latest result `1` | retry guidance without a refund promise |
+| Latest inquiry result `0` | waiting for App Store; no duplicate application guide |
+| REFUNDED | refunded text; cancel/reapply/service actions all false |
+| Missing fields or API failure | show a clear safe error state; never infer that an action is allowed |
+| Android/non-Apple | existing labels, actions, and refund behavior remain unchanged |
+
+### 5. Tests Required
+- Miniapp state tests cover guide visibility, review text, retry text, refunded text, hidden upload, `can_cancel=false`, and API-error cleanup.
+- Merchant tests cover status-area labels, detail notice/timeline, refund source, and persistent start/complete disabling while LOCKED/REFUNDED.
+- Compatibility tests cover missing new fields and an unchanged Android/non-Apple control case.
+- Layout checks cover 1280px and 1366px widths without adding a column or clipping existing actions.
+
+### 6. Wrong vs Correct
+#### Wrong
+- Show the Apple guide solely because a refund row exists.
+- Re-enable service after merchant rejection.
+- Guess Apple rejection from elapsed time or screenshots.
+
+#### Correct
+- Render the backend review, inquiry, risk, final-result, and action projections.
+- Keep every local iOS service refund non-cancellable and the original order permanently non-serviceable after LOCKED.
+- Leave Android and non-Apple branches unchanged.
+
+## Scenario: cashier payment convergence and repeat-submit safety
+
+### 1. Core invariant
+- A cashier page may create a payment only from an explicit user submit.
+- One submit owns one active transaction until paid, explicitly cancelled, or definitively closed.
+- Lifecycle refresh, native success callbacks, and query retries converge the same `outTradeNo`; they never call `orderPay` or reopen the native cashier.
+
+### 2. Client state contract
+- Keep an explicit local phase for `creating`, `cashier_open`, `confirming`, `awaiting_confirmation`, `success`, `cancelled`, and `failed`.
+- The submit control remains locked during creating, cashier-open, confirming, awaiting-confirmation, and success.
+- `handleSubmit()` returns the full create -> native cashier -> backend convergence Promise. Do not release the lock when only `orderPay` has returned.
+- Concurrent query signals for the same trade share one Promise, and successful finalization is idempotent.
+
+### 3. Backend response contract
+- `payment.state=created`: persist recovery data and open the cashier once.
+- `payment.state=confirming`: query the provided existing trade; if the transaction number is temporarily unavailable because creation is contended, stay fail-closed and do not open a cashier.
+- `payment.state=paid`: finalize success without opening a cashier.
+- A missing `state` remains compatible with legacy `created` responses.
+
+### 4. Recovery contract
+- Pending or unknown query results retain the transaction marker and use bounded polling of the same trade.
+- Polling exhaustion or network failure stays in `awaiting_confirmation`; it must not unlock another payment attempt.
+- Clear recovery data only after paid convergence, explicit user cancel / definitive pre-cashier rejection, or a definitive terminal-unpaid response.
+- A deliberate retry after cancellation carries the previous trade identifier so the backend can verify it before creating a new attempt.
+
+### 5. Required regression checks
+- Rapid double tap results in one `orderPay` call and one native payment invocation.
+- Native success and `onShow` recovery join one query sequence.
+- Pending -> paid converges; pending exhaustion remains locked with recovery data.
+- Duplicate success signals produce one toast/navigation action.
+- Existing `confirming` or `paid` backend states never open a new cashier.
+- H5, Alipay, balance, and ordinary WeChat branches retain their previous redirect/query behavior.
+
 ## Practical review checklist
 - [ ] Does the shared checkout page skip service-only validation for normal orders?
 - [ ] Are service-contact writes limited to `game_platform / game_account_id / contact_mobile / adult_confirm`?

@@ -33,6 +33,13 @@
                 <a-select-option v-for="(item, index) in PaymentMethodEnum.data" :key="index" :value="item.value">{{ item.name }}</a-select-option>
               </a-select>
             </a-form-item>
+            <a-form-item v-if="dataType === 'all'" label="支付渠道">
+              <a-select style="width: 120px" v-decorator="['paymentChannel', { initialValue: '' }]">
+                <a-select-option value="">全部</a-select-option>
+                <a-select-option value="ios_apple">iOS订单</a-select-option>
+                <a-select-option value="non_ios">非iOS订单</a-select-option>
+              </a-select>
+            </a-form-item>
             <a-form-item label="下单时间">
               <a-range-picker format="YYYY-MM-DD" v-decorator="['betweenTime']" />
             </a-form-item>
@@ -47,11 +54,11 @@
       <div class="ant-table ant-table-scroll-position-left ant-table-default ant-table-bordered">
         <div class="ant-table-content">
           <div class="ant-table-scroll">
-            <div class="ant-table-body" style="overflow-x: scroll;">
-              <table style="width: 1500px;">
+            <div class="ant-table-body order-table-scroll">
+              <table class="order-table">
                 <thead class="ant-table-thead">
                   <tr>
-                    <th v-for="(item, index) in columns" :key="index">
+                    <th v-for="(item, index) in columns" :key="index" :class="{ 'operation-column': index === columns.length - 1 }">
                       <span class="ant-table-header-column">
                         <div><span class="ant-table-column-title">{{ item.title }}</span></div>
                       </span>
@@ -91,10 +98,15 @@
                         <p class="c-muted-1">成年人下单：{{ getAdultConfirmText(getServiceContactField(item, 'adult_confirm')) }}</p>
                       </td>
                       <td>
-                        <a-tag :color="item.pay_status == PayStatusEnum.SUCCESS.value ? 'green' : ''">{{ PayStatusEnum[item.pay_status].name }}</a-tag>
+                        <a-tag :color="item.pay_status == PayStatusEnum.SUCCESS.value ? 'green' : ''">{{ getEnumName(PayStatusEnum, item.pay_status) }}</a-tag>
                       </td>
                       <td>
                         <a-tag :color="getServiceStatusColor(item)">{{ getServiceStatusText(item) }}</a-tag>
+                        <p v-if="item.backend_action_flags && item.backend_action_flags.ios_refund_risk_status >= 10" class="mt-5">
+                          <a-tag :color="item.backend_action_flags.ios_refund_risk_status >= 20 ? 'green' : 'red'">
+                            {{ item.backend_action_flags.refund_display_state_text || item.backend_action_flags.ios_refund_risk_text || '服务已冻结' }}
+                          </a-tag>
+                        </p>
                       </td>
                       <td>
                         <p>￥{{ item.pay_price }}</p>
@@ -103,9 +115,9 @@
                         <p>买家备注：{{ item.buyer_remark || '--' }}</p>
                         <p class="c-muted-1 mt-5">商家备注：{{ item.merchant_remark || '--' }}</p>
                       </td>
-                      <td>
+                      <td class="operation-column">
                         <div class="actions">
-                          <router-link v-if="$auth('/order/detail')" :to="{ path: '/order/detail', query: { orderId: item.order_id } }" target="_blank">详情</router-link>
+                          <router-link v-if="$auth('/order/detail')" class="detail-button" :to="{ path: '/order/detail', query: { orderId: item.order_id } }" target="_blank">详情</router-link>
                         </div>
                       </td>
                     </tr>
@@ -128,6 +140,7 @@
 <script>
 import { Empty } from 'ant-design-vue'
 import { assignment } from '@/utils/util'
+import { getEnumName } from '@/utils/enum'
 import * as Api from '@/api/order'
 import PlatformIcon from '@/components/PlatformIcon'
 import { GoodsItem, UserItem } from '@/components/Table'
@@ -198,6 +211,7 @@ export default {
     this.init()
   },
   methods: {
+    getEnumName,
     init () {
       this.dataType = this.getDataType()
       this.searchForm.resetFields()
@@ -300,6 +314,20 @@ export default {
 }
 
 .ant-table {
+  .order-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .order-table {
+    width: 100%;
+    min-width: 1280px;
+    table-layout: fixed;
+  }
+  .order-table .operation-column {
+    width: 96px;
+    min-width: 96px;
+    text-align: center;
+  }
   table {
     border: none;
     border-collapse: collapse;
@@ -330,5 +358,31 @@ export default {
   border-right: 1px solid #e8e8e8;
   border-left: 1px solid #e8e8e8;
   padding: 12px 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+}
+
+.detail-button {
+  display: inline-flex;
+  min-width: 64px;
+  height: 32px;
+  padding: 0 15px;
+  align-items: center;
+  justify-content: center;
+  color: #1890ff;
+  line-height: 30px;
+  white-space: nowrap;
+  border: 1px solid #1890ff;
+  border-radius: 4px;
+  transition: all 0.2s;
+
+  &:hover,
+  &:focus {
+    color: #40a9ff;
+    border-color: #40a9ff;
+  }
 }
 </style>

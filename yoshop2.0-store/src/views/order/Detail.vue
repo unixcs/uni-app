@@ -1,7 +1,23 @@
 <template>
   <div>
     <a-spin :spinning="isLoading" />
-    <div v-if="!isLoading" class="order-content">
+    <a-alert
+      v-if="!isLoading && loadError"
+      type="error"
+      showIcon
+      message="订单详情加载失败"
+      :description="loadError"
+      class="mt-20"
+    />
+    <div v-if="!isLoading && !loadError" class="order-content">
+      <a-alert
+        v-if="iosRefundRiskStatus >= 10"
+        type="error"
+        showIcon
+        :message="iosRefundRiskTitle"
+        :description="iosRefundRiskDescription"
+        class="mb-20"
+      />
       <a-card :bordered="false">
         <a-steps :current="progress" size="small">
           <a-step title="提交订单" :description="record.create_time || '--'" />
@@ -18,10 +34,10 @@
             <div class="status-tags mt-12">
               <a-tag :color="renderStateColor()">{{ record.state_text || '--' }}</a-tag>
               <a-tag :color="record.pay_status === PayStatusEnum.SUCCESS.value ? 'green' : 'default'">
-                {{ PayStatusEnum[record.pay_status].name }}
+                {{ getPayStatusText(record.pay_status) }}
               </a-tag>
-              <a-tag v-if="latestRefund && latestRefund.state_text" color="orange">
-                {{ latestRefund.state_text }}
+              <a-tag v-if="latestRefundDisplayText" color="orange">
+                {{ latestRefundDisplayText }}
               </a-tag>
             </div>
           </div>
@@ -57,7 +73,7 @@
             <a-tag :color="renderStateColor()">{{ record.state_text || '--' }}</a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="支付方式">
-            <a-tag color="green" v-if="record.pay_method">{{ PaymentMethodEnum[record.pay_method].name }}</a-tag>
+            <a-tag color="green" v-if="record.pay_method">{{ getPaymentMethodText(record.pay_method) }}</a-tag>
             <span v-else>--</span>
           </a-descriptions-item>
           <a-descriptions-item label="买家信息">
@@ -91,6 +107,8 @@
           <a-descriptions-item label="平台价格">￥{{ virtualPaymentGoodsPriceText }}</a-descriptions-item>
           <a-descriptions-item label="履约回执">{{ virtualPaymentProvideGoodsText }}</a-descriptions-item>
           <a-descriptions-item label="退款状态">{{ virtualPaymentRefundText }}</a-descriptions-item>
+          <a-descriptions-item v-if="isIosAppleRefundMode" label="退款模式">App Store 用户申请退款</a-descriptions-item>
+          <a-descriptions-item v-if="isIosAppleRefundMode" label="退款说明" :span="2">{{ virtualPaymentRefundGuidance }}</a-descriptions-item>
           <a-descriptions-item label="通知次数">{{ virtualPaymentSummary.notify_times || 0 }}</a-descriptions-item>
           <a-descriptions-item label="最近通知时间">{{ virtualPaymentLastNotifyText }}</a-descriptions-item>
         </a-descriptions>
@@ -154,12 +172,24 @@
         </div>
       </a-card>
 
-      <a-card v-if="latestRefund" class="mt-20" :bordered="false">
+      <a-card v-if="iosRefundTimeline.length" class="mt-20" :bordered="false" title="App Store退款问询时间线">
+        <a-timeline>
+          <a-timeline-item v-for="item in iosRefundTimeline" :key="item.inquiry_id" :color="Number(item.result_code) === 0 ? 'green' : 'red'">
+            <p>{{ formatInquiryTime(item.received_at) }}｜{{ item.result_info || (Number(item.result_code) === 0 ? '建议退款' : '建议拒绝退款') }}</p>
+            <p class="c-muted-1">服务：{{ item.service_stage || '--' }}；商家审核：{{ getInquiryAuditText(item.audit_status) }}</p>
+            <p v-if="item.request_reason" class="c-muted-1">退款原因：{{ item.request_reason }}</p>
+            <p v-if="item.evidence" class="c-muted-1">证据：{{ item.evidence }}</p>
+          </a-timeline-item>
+        </a-timeline>
+      </a-card>
+
+      <a-card v-if="refundInfoVisible" class="mt-20" :bordered="false">
         <a-descriptions title="退款信息" :column="2">
-          <a-descriptions-item label="退款状态">{{ latestRefund.state_text || '--' }}</a-descriptions-item>
-          <a-descriptions-item label="退款金额">￥{{ latestRefund.refund_money || '0.00' }}</a-descriptions-item>
-          <a-descriptions-item label="申请说明">{{ latestRefund.apply_desc || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="拒绝原因">{{ latestRefund.refuse_desc || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="退款状态">{{ latestRefundDisplayText || '--' }}</a-descriptions-item>
+          <a-descriptions-item label="退款金额">￥{{ latestRefundMoneyText }}</a-descriptions-item>
+          <a-descriptions-item v-if="latestRefundGuidance" label="退款说明" :span="2">{{ latestRefundGuidance }}</a-descriptions-item>
+          <a-descriptions-item label="申请说明">{{ (latestRefund && latestRefund.apply_desc) || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="拒绝原因">{{ (latestRefund && latestRefund.refuse_desc) || '-' }}</a-descriptions-item>
         </a-descriptions>
       </a-card>
     </div>
@@ -178,6 +208,8 @@ import {
   PayStatusEnum
 } from '@/common/enum/order'
 import { PaymentMethodEnum } from '@/common/enum/payment'
+import moment from 'moment'
+import { getEnumName } from '@/utils/enum'
 
 const goodsColumns = [
   {
@@ -214,6 +246,7 @@ export default {
       PayStatusEnum,
       PaymentMethodEnum,
       isLoading: true,
+      loadError: '',
       orderId: null,
       record: {},
       progress: 0,
@@ -244,6 +277,25 @@ export default {
     },
     canUseRefundBeforeServiceAction () {
       return this.$auth('/order.event/refundBeforeService') || this.$auth('/order/list/all.cancel')
+    },
+    isIosAppleRefundMode () {
+      return !!(this.backendActionFlags.ios_apple_refund_required || this.virtualPaymentSummary.ios_apple_refund_required)
+    },
+    iosRefundRiskStatus () {
+      return Number(this.backendActionFlags.ios_refund_risk_status || this.virtualPaymentSummary.ios_refund_risk_status || this.record.ios_refund_risk_status || 0)
+    },
+    iosRefundTimeline () {
+      return Array.isArray(this.record.ios_refund_inquiry_timeline) ? this.record.ios_refund_inquiry_timeline : []
+    },
+    iosRefundRiskTitle () {
+      if (this.iosRefundRiskStatus >= 20) return 'App Store退款成功'
+      return 'App Store退款处理中，原订单服务已永久冻结'
+    },
+    iosRefundRiskDescription () {
+      const summary = this.virtualPaymentSummary || {}
+      const latest = summary.latest_ios_refund_inquiry || this.backendActionFlags.latest_ios_refund_inquiry || null
+      const latestText = latest ? `最近问询：${this.formatInquiryTime(latest.received_at)}，${latest.result_info || '--'}。` : '尚无可展示的Apple问询记录。'
+      return `${latestText} 商家审核不代表Apple最终结果；开始服务和完成服务已由后端禁止。`
     },
     activeRefundId () {
       return Number(this.backendActionFlags.active_refund_id || 0)
@@ -295,8 +347,8 @@ export default {
     },
     virtualPaymentLastNotifyText () {
       const value = Number(this.virtualPaymentSummary.last_notify_time || 0)
-      if (!value) return '--'
-      return this.$moment.unix(value).format('YYYY-MM-DD HH:mm:ss')
+      if (!Number.isFinite(value) || value <= 0) return '--'
+      return moment.unix(value).format('YYYY-MM-DD HH:mm:ss')
     },
     virtualPaymentProvideGoodsText () {
       const status = this.virtualPaymentSummary.provide_goods_status || ''
@@ -308,7 +360,34 @@ export default {
       return status
     },
     virtualPaymentRefundText () {
-      return this.virtualPaymentSummary.refund_status || '--'
+      return this.virtualPaymentSummary.refund_display_state_text || this.virtualPaymentSummary.refund_status || '--'
+    },
+    virtualPaymentRefundGuidance () {
+      return this.virtualPaymentSummary.refund_guidance || this.backendActionFlags.refund_guidance || '--'
+    },
+    latestRefundDisplayText () {
+      if (this.latestRefund) {
+        return this.latestRefund.display_state_text || this.latestRefund.service_state_text || this.latestRefund.state_text || this.virtualPaymentSummary.refund_display_state_text || ''
+      }
+      return this.virtualPaymentSummary.refund_display_state_text || ''
+    },
+    latestRefundGuidance () {
+      if (this.latestRefund) {
+        return this.latestRefund.refund_guidance || this.virtualPaymentSummary.refund_guidance || ''
+      }
+      return this.virtualPaymentSummary.refund_guidance || ''
+    },
+    latestRefundMoneyText () {
+      if (this.latestRefund && this.latestRefund.refund_money) {
+        return this.latestRefund.refund_money
+      }
+      if (this.isIosAppleRefundMode) {
+        return this.record.pay_price || '0.00'
+      }
+      return '0.00'
+    },
+    refundInfoVisible () {
+      return !!this.latestRefund || this.isIosAppleRefundMode
     },
     virtualPaymentTradeStateText () {
       const state = Number(this.virtualPaymentSummary.trade_state || 0)
@@ -323,6 +402,22 @@ export default {
     this.handleRefresh()
   },
   methods: {
+    formatInquiryTime (value) {
+      const timestamp = Number(value || 0)
+      return timestamp > 0 ? moment.unix(timestamp).format('YYYY-MM-DD HH:mm:ss') : '--'
+    },
+    getInquiryAuditText (value) {
+      const status = Number(value)
+      if (status === 10) return '已同意'
+      if (status === 20) return '已驳回'
+      return '待审核/无记录'
+    },
+    getPayStatusText (value) {
+      return getEnumName(PayStatusEnum, value)
+    },
+    getPaymentMethodText (value) {
+      return getEnumName(PaymentMethodEnum, value)
+    },
     getGamePlatformText (value) {
       if (value === 'pc') return '端游'
       if (value === 'mobile') return '手游'
@@ -359,10 +454,19 @@ export default {
     },
     getDetail () {
       this.isLoading = true
-      Api.detail({ orderId: this.orderId })
+      this.loadError = ''
+      return Api.detail({ orderId: this.orderId })
         .then(result => {
-          this.record = result.data.detail || {}
+          const detail = result && result.data ? result.data.detail : null
+          if (!detail || !detail.order_id) {
+            throw new Error('接口未返回有效订单详情，请刷新重试')
+          }
+          this.record = detail
           this.initProgress()
+        })
+        .catch(error => {
+          this.record = {}
+          this.loadError = (error && error.message) || '订单详情请求失败，请刷新重试'
         })
         .finally(() => {
           this.isLoading = false
@@ -413,6 +517,10 @@ export default {
       )
     },
     handleRefundBeforeService () {
+      if (this.isIosAppleRefundMode) {
+        this.$message.warning(this.virtualPaymentRefundGuidance || 'iOS 虚拟支付订单需由用户在 App Store 申请退款，商家不可直接发起服务前退款。')
+        return
+      }
       this.confirmServiceAction(
         '确认服务前退款？',
         '该操作会按原路退款并关闭当前服务单。',

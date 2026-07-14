@@ -15,7 +15,7 @@
     </template>
     <!-- 导出状态 -->
     <template slot="status" slot-scope="text">
-      <a-tag :color="ExportStatusColorEnum[text]">{{ ExportStatusEnum[text].name }}</a-tag>
+      <a-tag :color="ExportStatusColorEnum[text]">{{ getEnumName(ExportStatusEnum, text) }}</a-tag>
     </template>
     <!-- 操作 -->
     <span class="actions" slot="action" slot-scope="text, item">
@@ -33,11 +33,12 @@
 import { STable } from '@/components'
 import * as Api from '@/api/order/export'
 import { ExportStatusEnum } from '@/common/enum/order/export'
+import { getEnumName } from '@/utils/enum'
 
 const ExportStatusColorEnum = {
   [ExportStatusEnum.NORMAL.value]: '',
   [ExportStatusEnum.COMPLETED.value]: 'green',
-  [ExportStatusEnum.FAIL.value]: 'red',
+  [ExportStatusEnum.FAIL.value]: 'red'
 }
 
 // 订单导出记录组件
@@ -87,6 +88,7 @@ export default {
   },
 
   methods: {
+    getEnumName,
 
     /**
      * 刷新列表
@@ -94,7 +96,7 @@ export default {
      */
     handleRefresh (bool = false) {
       this.$refs.table.refresh(bool)
-    },
+    }
 
   }
 }

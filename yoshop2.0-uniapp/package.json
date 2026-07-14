@@ -5,10 +5,12 @@
     "dev:h5": "node -r ./scripts/uni-plugin-bootstrap.cjs ./node_modules/@dcloudio/vite-plugin-uni/bin/uni.js dev -p h5",
     "build:h5": "node -r ./scripts/uni-plugin-bootstrap.cjs ./node_modules/@dcloudio/vite-plugin-uni/bin/uni.js build -p h5",
     "build:h5:sync": "node ./scripts/build-h5-sync.cjs",
-    "build:mp-weixin": "node ./scripts/build-mp-weixin.cjs",
+    "build:mp-weixin": "node ./scripts/build-mp-weixin.cjs --environment test",
     "dev:all": "node ./scripts/dev-all.cjs",
     "preview": "vite preview",
-    "postinstall": "node ./scripts/create-vue-cli-preprocess-shim.cjs && node ./scripts/patch-vuex-effectscope-compat.cjs"
+    "postinstall": "node ./scripts/create-vue-cli-preprocess-shim.cjs && node ./scripts/patch-vuex-effectscope-compat.cjs",
+    "build:mp-weixin:test": "node ./scripts/build-mp-weixin.cjs --environment test",
+    "build:mp-weixin:prod": "node ./scripts/build-mp-weixin.cjs --environment production"
   },
   "dependencies": {
     "vue": "3.1.5",
