@@ -36,6 +36,12 @@ class NginxContractTests(unittest.TestCase):
                 self.assertIn("location ^~ /.well-known/acme-challenge/", block)
                 self.assertIn("root /var/www/html;", block)
 
+    def test_production_root_prefers_h5_shell_over_php_front_controller(self) -> None:
+        block = server_block(
+            PRODUCTION.read_text(), "wx.gxwqb.cn", listen="443 ssl http2"
+        )
+        self.assertIn("index index.html index.php index.htm;", block)
+
     def test_only_production_exposes_minimal_healthz(self) -> None:
         production = PRODUCTION.read_text()
         maintenance = MAINTENANCE.read_text()
