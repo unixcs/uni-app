@@ -48,10 +48,22 @@ require_root() {
 }
 
 initialize_layout() {
-  install -d -m 0750 "$ROOT" "$INCOMING" "$RELEASES" "$STATE"
-  install -d -m 0750 "$SHARED" "$SHARED/logs" "$SHARED/backups" "$SHARED/payment"
-  install -d -m 0770 -o www-data -g www-data "$SHARED/uploads" "$SHARED/runtime" 2>/dev/null || \
+  if [[ "$TEST_MODE" == 1 ]]; then
+    # Keep fixtures independent of production-only accounts while enforcing the
+    # same directory modes used on the server.
+    install -d -m 0711 "$ROOT"
+    install -d -m 0750 "$INCOMING" "$RELEASES" "$STATE"
+    install -d -m 0750 "$SHARED" "$SHARED/logs" "$SHARED/payment"
+    install -d -m 0700 "$SHARED/backups"
     install -d -m 0770 "$SHARED/uploads" "$SHARED/runtime"
+  else
+    install -d -o root -g www-data -m 0711 "$ROOT"
+    install -d -o deployer -g www-data -m 0750 "$INCOMING"
+    install -d -o root -g www-data -m 0750 "$RELEASES" "$STATE"
+    install -d -o root -g www-data -m 0750 "$SHARED" "$SHARED/logs" "$SHARED/payment"
+    install -d -o root -g root -m 0700 "$SHARED/backups"
+    install -d -o www-data -g www-data -m 0770 "$SHARED/uploads" "$SHARED/runtime"
+  fi
   touch "$LOCK"
   chmod 0640 "$LOCK"
 }

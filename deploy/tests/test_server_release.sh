@@ -5,6 +5,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 root="$tmp/server"
 mkdir -p "$root/incoming"
+chmod 0750 "$root"
 
 make_release() {
   local server_root="$1" id="$2" marker="$3"
@@ -79,10 +80,50 @@ assert payload['ok'] is (sys.argv[4]=='true'), payload
 PY
 }
 
+assert_mode() {
+  local path="$1" expected="$2" actual
+  actual="$(stat -c '%a' "$path")"
+  [[ "$actual" == "$expected" ]] || {
+    echo "unexpected mode for $path: expected $expected, got $actual" >&2
+    exit 1
+  }
+}
+
+assert_layout_modes() {
+  local server_root="$1"
+  assert_mode "$server_root" 711
+  assert_mode "$server_root/incoming" 750
+  assert_mode "$server_root/releases" 750
+  assert_mode "$server_root/state" 750
+  assert_mode "$server_root/shared" 750
+  assert_mode "$server_root/shared/logs" 750
+  assert_mode "$server_root/shared/payment" 750
+  assert_mode "$server_root/shared/backups" 700
+  assert_mode "$server_root/shared/uploads" 770
+  assert_mode "$server_root/shared/runtime" 770
+}
+
+loosen_layout_modes() {
+  local server_root="$1"
+  chmod 0777 "$server_root" "$server_root/incoming" "$server_root/releases" \
+    "$server_root/state" "$server_root/shared" "$server_root/shared/logs" \
+    "$server_root/shared/payment" "$server_root/shared/backups" \
+    "$server_root/shared/uploads" "$server_root/shared/runtime"
+}
+
 id1=20260715000001-111111111111
 sha1="$(make_release "$root" "$id1" one)"
 run_release prepare "$id1" "yoshop-$id1.tar.gz" "$sha1" >"$tmp/prepare-1.json"
 assert_status "$tmp/prepare-1.json" - "$id1" true
+assert_layout_modes "$root"
+
+# Each command reasserts the complete layout contract, including traverse-only
+# access on ROOT and the private backup directory. This catches regressions where
+# initialization only happened during bootstrap or widened backups incidentally.
+loosen_layout_modes "$root"
+run_release status >"$tmp/status-layout.json"
+assert_status "$tmp/status-layout.json" - "$id1" true
+assert_layout_modes "$root"
 [[ ! -e "$root/current" ]]
 [[ -d "$root/releases/$id1" && ! -e "$root/incoming/yoshop-$id1.tar.gz" ]]
 [[ -L "$root/releases/$id1/yoshop2.0/.env" ]]
@@ -100,17 +141,23 @@ fi
 run_release status >"$tmp/status-prepared.json"
 assert_status "$tmp/status-prepared.json" - "$id1" true
 
+loosen_layout_modes "$root"
 run_release activate "$id1" >"$tmp/activate-1.json"
 assert_status "$tmp/activate-1.json" "$id1" - true
+assert_layout_modes "$root"
 [[ "$(basename "$(readlink -f "$root/current")")" == "$id1" ]]
 
 # The routine install command remains prepare + activate + health in one invocation.
 id2=20260715000002-222222222222
 sha2="$(make_release "$root" "$id2" two)"
+loosen_layout_modes "$root"
 run_release install "$id2" "yoshop-$id2.tar.gz" "$sha2" >"$tmp/install-2.json"
 assert_status "$tmp/install-2.json" "$id2" - true
+assert_layout_modes "$root"
+loosen_layout_modes "$root"
 run_release rollback >"$tmp/rollback.json"
 assert_status "$tmp/rollback.json" "$id1" - true
+assert_layout_modes "$root"
 
 # Failed health restores the old current and leaves the immutable candidate retryable.
 id3=20260715000003-333333333333
