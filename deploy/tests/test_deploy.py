@@ -290,7 +290,7 @@ class DeployUnitTests(unittest.TestCase):
                     self.assertEqual(
                         (
                             "composer", "dump-autoload", "--working-dir", str(backend),
-                            "--no-dev", "--optimize", "--no-scripts",
+                            "--no-dev", "--optimize", "--no-scripts", "--no-interaction",
                         ),
                         args,
                     )

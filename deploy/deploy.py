@@ -509,7 +509,7 @@ def build_release(config: dict[str, Any], *, fetch: bool = False) -> dict[str, A
         # removes install-order variance without re-running ThinkPHP service discovery.
         run((
             "composer", "dump-autoload", "--working-dir", str(backend), "--no-dev",
-            "--optimize", "--no-scripts",
+            "--optimize", "--no-scripts", "--no-interaction",
         ))
         # Source-only Composer packages can carry nested repositories, and ThinkPHP's
         # service discovery records the current wall clock. Neither belongs in a runtime
