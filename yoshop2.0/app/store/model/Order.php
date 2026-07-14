@@ -15,11 +15,13 @@ namespace app\store\model;
 use app\api\model\wxapp\Setting as WxappSettingModel;
 use app\common\model\Order as OrderModel;
 use app\common\model\PaymentTrade as PaymentTradeModel;
+use app\common\model\PaymentIosRefundInquiry as IosRefundInquiryModel;
 use app\common\model\Goods as CommonGoodsModel;
 use app\common\model\store\Setting as StoreSettingModel;
 use app\common\service\Order as OrderService;
 use app\common\service\order\Complete as OrderCompleteService;
 use app\common\service\order\Refund as RefundService;
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
 use app\common\service\order\Printer as PrinterService;
 use app\common\service\order\PaySuccess as OrderPaySuccessService;
 use app\common\enum\order\{
@@ -34,6 +36,8 @@ use app\common\enum\order\refund\AuditStatus as RefundAuditStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\payment\Method as PaymentMethod;
+use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
+use app\common\enum\payment\trade\ChannelClass as ChannelClassEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\library\helper;
 use app\common\library\wechat\VirtualPayment as WechatVirtualPayment;
@@ -59,10 +63,13 @@ class Order extends OrderModel
             'trade',
         ]);
         if ($detail) {
+            $latestInquiry = IosRefundInquiryModel::latestByOrderId((int)$detail['order_id']);
+            $detail['ios_refund_latest_inquiry'] = $latestInquiry ? IosRefundInquiryModel::project($latestInquiry->toArray()) : null;
+            $detail['ios_refund_inquiry_timeline'] = IosRefundInquiryModel::timelineByOrderId((int)$detail['order_id']);
             $virtualTrade = $this->resolveBackendVirtualTrade($detail);
             if (!empty($virtualTrade)) {
                 $detail->setRelation('trade', $virtualTrade);
-                $detail['virtual_payment_summary'] = $this->buildVirtualPaymentSummary($virtualTrade);
+                $detail['virtual_payment_summary'] = $this->buildVirtualPaymentSummary($virtualTrade, $detail);
             }
         }
         return $this->appendBackendActionFlags($detail);
@@ -88,8 +95,9 @@ class Order extends OrderModel
             ->leftJoin('payment_trade trade', 'trade.trade_id = order.trade_id')
             ->where($filter)
             ->where('order.is_delete', '=', 0)
-            ->order(['order.create_time' => 'desc']);
+            ->order(['order.create_time' => 'desc', 'order.order_id' => 'desc']);
         $this->applyKeywordFilter($query, $params);
+        $this->applyPaymentChannelFilter($query, (string)$params['paymentChannel']);
         if ($this->isRefundDataType($params['dataType'])) {
             $refundOrderIds = $this->getRefundOrderIdsByDataType($params['dataType']);
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
@@ -103,7 +111,13 @@ class Order extends OrderModel
             }
         }
         $list = $query->paginate(10);
+        $orderIds = [];
         foreach ($list as $item) {
+            $orderIds[] = (int)$item['order_id'];
+        }
+        $inquiryMap = IosRefundInquiryModel::latestMapByOrderIds($orderIds);
+        foreach ($list as $item) {
+            $item['ios_refund_latest_inquiry'] = $inquiryMap[(int)$item['order_id']] ?? null;
             $item->append(['backend_action_flags']);
         }
         return $list;
@@ -115,14 +129,40 @@ class Order extends OrderModel
      */
     public function startService(): bool
     {
-        if (!$this->checkCanStartService()) {
-            return false;
-        }
         return $this->transaction(function () {
-            return $this->save([
+            // 授权必须在订单锁内重做，避免退款申请/Apple问询与开始服务同时成功。
+            $order = (new static)
+                ->where('order_id', '=', (int)$this['order_id'])
+                ->where('store_id', '=', (int)static::$storeId)
+                ->lock(true)
+                ->find();
+            if (empty($order)) {
+                $this->error = '订单不存在';
+                return false;
+            }
+            (new OrderRefund)
+                ->where('order_id', '=', (int)$order['order_id'])
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            if ((int)($order['trade_id'] ?? 0) > 0) {
+                (new PaymentTradeModel)
+                    ->where('trade_id', '=', (int)$order['trade_id'])
+                    ->lock(true)
+                    ->find();
+            }
+            if (!$this->checkCanStartService($order)) {
+                return false;
+            }
+            if ($order->save([
                 'delivery_status' => DeliveryStatusEnum::DELIVERED,
                 'delivery_time' => time(),
-            ]) !== false;
+            ]) === false) {
+                return false;
+            }
+            $this->data($order->getData());
+            return true;
         });
     }
 
@@ -132,34 +172,65 @@ class Order extends OrderModel
      */
     public function completeService(): bool
     {
-        if (!$this->checkCanCompleteService()) {
-            return false;
-        }
         $shouldNotifyVirtualProvideGoods = false;
-        $virtualTrade = $this->resolveBackendVirtualTrade($this);
-        if (!empty($virtualTrade)) {
-            $this->setRelation('trade', $virtualTrade);
-            $this['trade_id'] = (int)($virtualTrade['trade_id'] ?? $this['trade_id']);
-        }
         $status = $this->transaction(function () use (&$shouldNotifyVirtualProvideGoods) {
-            $status = $this->save([
+            // 授权必须在订单锁内重做，锁顺序与退款/问询一致。
+            $order = (new static)
+                ->where('order_id', '=', (int)$this['order_id'])
+                ->where('store_id', '=', (int)static::$storeId)
+                ->lock(true)
+                ->find();
+            if (empty($order)) {
+                $this->error = '订单不存在';
+                return false;
+            }
+            (new OrderRefund)
+                ->where('order_id', '=', (int)$order['order_id'])
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            $trade = null;
+            if ((int)($order['trade_id'] ?? 0) > 0) {
+                $trade = (new PaymentTradeModel)
+                    ->where('trade_id', '=', (int)$order['trade_id'])
+                    ->lock(true)
+                    ->find();
+            }
+            if (!$this->checkCanCompleteService($order)) {
+                return false;
+            }
+            if ($order->save([
                 'receipt_status' => ReceiptStatusEnum::RECEIVED,
                 'receipt_time' => time(),
                 'order_status' => OrderStatusEnum::COMPLETED,
-            ]);
-            if ($status === false) {
+            ]) === false) {
                 return false;
             }
-            $shouldNotifyVirtualProvideGoods = (string)($this['trade']['platform'] ?? '') === 'wechat_virtual';
+            $shouldNotifyVirtualProvideGoods = !empty($trade)
+                && (string)($trade['platform'] ?? '') === 'wechat_virtual';
             if ($shouldNotifyVirtualProvideGoods) {
-                PaymentTradeModel::mergePayloadSnapshot((int)$this['trade_id'], [
-                    'provide_goods' => [
-                        'status' => 'pending',
-                        'queued_at' => time(),
-                    ],
+                $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($trade['payload_snapshot'] ?? ''));
+                $snapshot['provide_goods'] = array_merge((array)($snapshot['provide_goods'] ?? []), [
+                    'status' => 'pending',
+                    'queued_at' => time(),
                 ]);
+                if ($trade->save([
+                    'payload_snapshot' => helper::jsonEncode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]) === false) {
+                    throwError('记录履约通知待发送状态失败');
+                }
+                $order->setRelation('trade', $trade);
             }
-            (new OrderCompleteService)->complete([$this], static::$storeId);
+            $goods = (new OrderGoods)
+                ->where('order_id', '=', (int)$order['order_id'])
+                ->select();
+            $order->setRelation('goods', $goods);
+            (new OrderCompleteService)->complete([$order], static::$storeId);
+            $this->data($order->getData());
+            if (!empty($trade)) {
+                $this->setRelation('trade', $trade);
+            }
             return true;
         });
         if ($status && $shouldNotifyVirtualProvideGoods) {
@@ -232,8 +303,9 @@ class Order extends OrderModel
             ->leftJoin('payment_trade trade', 'trade.trade_id = order.trade_id')
             ->where($queryFilter)
             ->where('order.is_delete', '=', 0)
-            ->order(['order.create_time' => 'desc']);
+            ->order(['order.create_time' => 'desc', 'order.order_id' => 'desc']);
         $this->applyKeywordFilter($query, $params);
+        $this->applyPaymentChannelFilter($query, (string)$params['paymentChannel']);
         if ($this->isRefundDataType($params['dataType'])) {
             $refundOrderIds = $this->getRefundOrderIdsByDataType($params['dataType']);
             $query->where('order.order_id', 'in', empty($refundOrderIds) ? [0] : $refundOrderIds);
@@ -288,13 +360,57 @@ class Order extends OrderModel
             'gamePlatform' => '',   // 服务单游戏平台筛选
             'orderSource' => -1,    // 订单来源
             'payMethod' => '',      // 支付方式
+            'paymentChannel' => '', // 支付渠道 (ios_apple/non_ios)
             'deliveryType' => -1,   // 兼容旧参数，服务订单场景忽略
             'betweenTime' => [],    // 起止时间
             'userId' => 0,          // 会员ID
         ]);
         $params['serviceSearchFields'] = $this->normalizeServiceSearchFields($params['serviceSearchFields'] ?? []);
         $params['gamePlatform'] = $this->normalizeServiceGamePlatform((string)($params['gamePlatform'] ?? ''));
+        $paymentChannel = (string)($params['paymentChannel'] ?? '');
+        $params['paymentChannel'] = $params['dataType'] === 'all' && in_array($paymentChannel, ['ios_apple', 'non_ios'], true)
+            ? $paymentChannel
+            : '';
         return $params;
+    }
+
+    /**
+     * 在分页前应用支付渠道筛选。未知、未支付、失败或交易绑定异常均不命中任一渠道。
+     * @param mixed $query
+     * @param string $paymentChannel
+     * @return void
+     */
+    private function applyPaymentChannelFilter($query, string $paymentChannel): void
+    {
+        if ($paymentChannel === '') {
+            return;
+        }
+        $tradeConsistency = '`trade`.`trade_id` = `order`.`trade_id`'
+            . ' AND `trade`.`order_id` = `order`.`order_id`'
+            . ' AND `trade`.`store_id` = `order`.`store_id`'
+            . ' AND `trade`.`trade_state` IN (:tradeSuccess, :tradeRefund)';
+        $bindings = [
+            'paySuccess' => PayStatusEnum::SUCCESS,
+            'tradeSuccess' => TradeStatusEnum::SUCCESS,
+            'tradeRefund' => TradeStatusEnum::REFUND,
+        ];
+        if ($paymentChannel === 'ios_apple') {
+            $bindings['channelClass'] = ChannelClassEnum::IOS_APPLE;
+            $query->whereRaw(
+                '`order`.`pay_status` = :paySuccess AND ' . $tradeConsistency . ' AND `trade`.`channel_class` = :channelClass',
+                $bindings
+            );
+            return;
+        }
+        $bindings['balanceMethod'] = PaymentMethod::BALANCE;
+        $bindings['channelClass'] = ChannelClassEnum::NON_IOS;
+        $query->whereRaw(
+            '`order`.`pay_status` = :paySuccess AND ('
+            . '(`order`.`pay_method` = :balanceMethod AND `order`.`trade_id` = 0)'
+            . ' OR (' . $tradeConsistency . ' AND `trade`.`channel_class` = :channelClass)'
+            . ')',
+            $bindings
+        );
     }
 
     /**
@@ -628,6 +744,7 @@ class Order extends OrderModel
     public function getBackendActionFlagsAttr($value, $data): array
     {
         $activeRefund = $this->getActiveServiceRefundSummary($data);
+        $refundProjection = $this->getBackendVirtualRefundProjection($data);
         return [
             'can_start_service' => $this->checkCanStartService($data),
             'can_complete_service' => $this->checkCanCompleteService($data),
@@ -635,6 +752,17 @@ class Order extends OrderModel
             'has_active_refund' => !empty($activeRefund),
             'active_refund_id' => (int)($activeRefund['order_refund_id'] ?? 0),
             'can_audit_refund' => !empty($activeRefund) && (int)($activeRefund['audit_status'] ?? 0) === RefundAuditStatusEnum::WAIT,
+            'ios_apple_refund_required' => (bool)($refundProjection['ios_apple_refund_required'] ?? false),
+            'ios_refund_risk_status' => (int)($refundProjection['ios_refund_risk_status'] ?? 0),
+            'ios_refund_risk_text' => (string)($refundProjection['ios_refund_risk_text'] ?? ''),
+            'ios_refund_inquiry_received' => (bool)($refundProjection['ios_refund_inquiry_received'] ?? false),
+            'latest_ios_refund_inquiry' => $refundProjection['latest_ios_refund_inquiry'] ?? null,
+            'merchant_refund_review_status' => $refundProjection['merchant_refund_review_status'] ?? null,
+            'can_cancel_refund' => (bool)($refundProjection['can_cancel'] ?? false),
+            'refund_entry_mode' => (string)($refundProjection['refund_entry_mode'] ?? 'developer_refund'),
+            'refund_guidance' => (string)($refundProjection['refund_guidance'] ?? ''),
+            'refund_display_state' => (string)($refundProjection['refund_display_state'] ?? ''),
+            'refund_display_state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
         ];
     }
 
@@ -783,6 +911,10 @@ class Order extends OrderModel
             $this->error = '当前订单状态不允许开始服务';
             return false;
         }
+        if (IosRefundRiskService::isLocked($order)) {
+            $this->error = '该订单已进入App Store退款流程，服务已永久冻结';
+            return false;
+        }
         if ($this->hasActiveRefund((int)$order['order_id'])) {
             $this->error = '当前订单存在进行中的退款申请，暂不可开始服务';
             return false;
@@ -811,6 +943,10 @@ class Order extends OrderModel
             $this->error = '当前订单状态不允许完成服务';
             return false;
         }
+        if (IosRefundRiskService::isLocked($order)) {
+            $this->error = '该订单已进入App Store退款流程，服务已永久冻结';
+            return false;
+        }
         if ($this->hasActiveRefund((int)$order['order_id'])) {
             $this->error = '当前订单存在进行中的退款申请，暂不可完成服务';
             return false;
@@ -832,6 +968,11 @@ class Order extends OrderModel
         }
         if ($order['pay_status'] != PayStatusEnum::SUCCESS) {
             $this->error = '未支付订单无需退款';
+            return false;
+        }
+        $refundProjection = $this->getBackendVirtualRefundProjection($order);
+        if (!empty($refundProjection['ios_apple_refund_required'])) {
+            $this->error = 'iOS App Store 虚拟支付订单需由用户在 App Store 申请退款，商家不可直接发起服务前退款';
             return false;
         }
         if (static::getServiceRefundMode($order) !== static::SERVICE_REFUND_MODE_AUTO) {
@@ -872,33 +1013,29 @@ class Order extends OrderModel
             return $order['trade'] ?? null;
         }
         $activeRefund = $this->getActiveServiceRefundSummary($order);
-        $activeRefundId = (int)($activeRefund['order_refund_id'] ?? 0);
-        $trades = PaymentTradeModel::getVirtualTradesByOrderId($orderId);
-        if ($trades->isEmpty()) {
-            return $order['trade'] ?? null;
-        }
-        if ($activeRefundId > 0) {
-            foreach ($trades as $trade) {
-                $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($trade['payload_snapshot'] ?? ''));
-                if ((int)($snapshot['virtual_refund']['order_refund_id'] ?? 0) === $activeRefundId) {
-                    return $trade;
-                }
-            }
-        }
-        $currentTradeId = (int)($order['trade_id'] ?? 0);
-        if ($currentTradeId > 0) {
-            foreach ($trades as $trade) {
-                if ((int)$trade['trade_id'] === $currentTradeId) {
-                    return $trade;
-                }
-            }
-        }
-        foreach ($trades as $trade) {
-            if (in_array((int)($trade['trade_state'] ?? 0), [20, 30], true)) {
-                return $trade;
-            }
-        }
-        return $trades[0] ?? ($order['trade'] ?? null);
+        $trade = PaymentTradeModel::resolveVirtualTradeForRefundContext(
+            $orderId,
+            (int)($order['trade_id'] ?? 0),
+            (int)($activeRefund['order_refund_id'] ?? 0)
+        );
+        return $trade ?: ($order['trade'] ?? null);
+    }
+
+    /**
+     * 获取后台订单维度的虚拟支付退款投影。
+     * @param array|self|null $order
+     * @param PaymentTradeModel|array|null $trade
+     * @return array
+     */
+    private function getBackendVirtualRefundProjection($order = null, $trade = null): array
+    {
+        $order = $order ?: $this;
+        $orderData = $order instanceof self ? $order->getData() : (array)$order;
+        $refund = $this->getActiveServiceRefundSummary($orderData) ?: $this->getLatestServiceRefundSummary($orderData);
+        $trade = $trade ?: $this->resolveBackendVirtualTrade($orderData);
+        return IosRefundRiskService::buildProjection($orderData, $trade, (array)$refund,
+            !empty($orderData['ios_refund_latest_inquiry']) ? (array)$orderData['ios_refund_latest_inquiry'] : null
+        );
     }
 
     /**
@@ -945,6 +1082,24 @@ class Order extends OrderModel
     }
 
     /**
+     * 获取最近一笔服务退款摘要（包含已驳回/已完成），供风险状态投影使用。
+     */
+    private function getLatestServiceRefundSummary($order = null): ?array
+    {
+        $order = $order ?: $this;
+        if (empty($order['order_id'])) {
+            return null;
+        }
+        $refund = (new OrderRefund)
+            ->field(['order_refund_id', 'audit_status', 'status', 'apply_desc', 'refuse_desc', 'refund_money'])
+            ->where('type', '=', RefundTypeEnum::SERVICE)
+            ->where('order_id', '=', (int)$order['order_id'])
+            ->order(['create_time' => 'desc', 'order_refund_id' => 'desc'])
+            ->find();
+        return $refund ? $refund->toArray() : null;
+    }
+
+    /**
      * 是否为服务订单
      * @param array|self $order
      * @return bool
@@ -964,8 +1119,21 @@ class Order extends OrderModel
         if ((string)($this['trade']['platform'] ?? '') !== 'wechat_virtual') {
             return;
         }
-        $claim = PaymentTradeModel::claimProvideGoodsDispatch((int)$this['trade_id'], 'store_complete_service');
+        // order -> trade 原子建立发送权，消除风险写入与 dispatch claim 之间的 TOCTOU。
+        $claim = IosRefundRiskService::claimProvideGoodsDispatchIfAllowed(
+            (int)$this['order_id'],
+            (int)$this['trade_id'],
+            'store_complete_service'
+        );
         if (empty($claim['claimed'])) {
+            if ((string)($claim['reason'] ?? '') === 'ios_refund_risk_locked') {
+                $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($this['trade']['payload_snapshot'] ?? ''));
+                if (!in_array((string)($snapshot['provide_goods']['status'] ?? ''), ['success', 'sending'], true)) {
+                    PaymentTradeModel::finishProvideGoodsDispatch((int)$this['trade_id'], 'skipped', [
+                        'reason' => 'ios_refund_risk_locked',
+                    ]);
+                }
+            }
             return;
         }
         $config = StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT, (int)$this['store_id']);
@@ -993,6 +1161,14 @@ class Order extends OrderModel
             'env' => $env,
         ];
         try {
+            // 真正发起上游请求前再次读取风险；前端按钮和任务扫描条件都不是安全边界。
+            $riskOrder = (new static)->where('order_id', '=', (int)$this['order_id'])->find();
+            if (!empty($riskOrder) && IosRefundRiskService::isLocked($riskOrder)) {
+                PaymentTradeModel::finishProvideGoodsDispatch((int)$this['trade_id'], 'skipped', [
+                    'reason' => 'ios_refund_risk_locked_before_send',
+                ]);
+                return;
+            }
             $payment = new WechatVirtualPayment($appId, $appSecret, $appKey);
             $result = $payment->notifyProvideGoods($payload);
             PaymentTradeModel::finishProvideGoodsDispatch(
@@ -1016,15 +1192,17 @@ class Order extends OrderModel
      * @param PaymentTradeModel|array $trade
      * @return array
      */
-    private function buildVirtualPaymentSummary($trade): array
+    private function buildVirtualPaymentSummary($trade, $order = null): array
     {
         $tradeData = \is_array($trade) ? $trade : $trade->toArray();
         if ((string)($tradeData['platform'] ?? '') !== 'wechat_virtual') {
             return [];
         }
+        $order = $order ?: $this;
         $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeData['payload_snapshot'] ?? ''));
         $provideGoods = (array)($snapshot['provide_goods'] ?? []);
         $refundNotify = (array)($snapshot['refund_notify'] ?? []);
+        $refundProjection = $this->getBackendVirtualRefundProjection($order, $trade);
         return [
             'enabled' => true,
             'platform' => (string)($tradeData['platform'] ?? ''),
@@ -1036,6 +1214,16 @@ class Order extends OrderModel
             'trade_state' => (int)($tradeData['trade_state'] ?? 0),
             'refund_status' => (string)($refundNotify['payload']['RetMsg'] ?? ''),
             'provide_goods_status' => (string)($provideGoods['status'] ?? ''),
+            'ios_apple_refund_required' => (bool)($refundProjection['ios_apple_refund_required'] ?? false),
+            'ios_refund_risk_status' => (int)($refundProjection['ios_refund_risk_status'] ?? 0),
+            'ios_refund_risk_text' => (string)($refundProjection['ios_refund_risk_text'] ?? ''),
+            'ios_refund_inquiry_received' => (bool)($refundProjection['ios_refund_inquiry_received'] ?? false),
+            'latest_ios_refund_inquiry' => $refundProjection['latest_ios_refund_inquiry'] ?? null,
+            'merchant_refund_review_status' => $refundProjection['merchant_refund_review_status'] ?? null,
+            'refund_entry_mode' => (string)($refundProjection['refund_entry_mode'] ?? 'developer_refund'),
+            'refund_guidance' => (string)($refundProjection['refund_guidance'] ?? ''),
+            'refund_display_state' => (string)($refundProjection['refund_display_state'] ?? ''),
+            'refund_display_state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
         ];
     }
 }

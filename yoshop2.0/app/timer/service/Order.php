@@ -22,10 +22,12 @@ use app\common\service\BaseService;
 use app\common\service\Order as OrderService;
 use app\common\service\order\Complete as OrderCompleteService;
 use app\common\service\order\Refund as RefundService;
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
 use app\common\service\order\PaySuccess as OrderPaySuccessService;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use app\common\enum\order\PayStatus as PayStatusEnum;
 use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
+use app\common\enum\payment\trade\ChannelClass as ChannelClassEnum;
 use app\common\enum\Client as ClientEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\library\helper;
@@ -335,10 +337,121 @@ class Order extends BaseService
                 ];
             }
         }
+        $results = array_merge($results, $this->syncPaidUnknownVirtualTradeChannels(
+            $storeId,
+            $config,
+            $appId,
+            $appSecret
+        ));
         Tools::taskLogs('Order', 'syncVirtualTradeStates', [
             'storeId' => $storeId,
             'results' => helper::jsonEncode($results, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
+    }
+
+    /**
+     * 有界补偿：订单已支付但渠道分类仍未知时继续查单，避免长期无法筛选。
+     *
+     * @param int $storeId
+     * @param array $config
+     * @param string $appId
+     * @param string $appSecret
+     * @return array<int, array<string, mixed>>
+     */
+    private function syncPaidUnknownVirtualTradeChannels(int $storeId, array $config, string $appId, string $appSecret): array
+    {
+        $results = [];
+        $processed = 0;
+        $trades = (new PaymentTradeModel())
+            ->alias('trade')
+            ->join('order o', 'o.order_id = trade.order_id')
+            ->field('trade.*')
+            ->where('trade.store_id', '=', $storeId)
+            ->where('trade.platform', '=', 'wechat_virtual')
+            ->where('trade.channel_class', '=', ChannelClassEnum::UNKNOWN)
+            ->whereIn('trade.trade_state', [TradeStatusEnum::SUCCESS, TradeStatusEnum::REFUND])
+            ->where('o.pay_status', '=', PayStatusEnum::SUCCESS)
+            ->whereRaw('`o`.`trade_id` = `trade`.`trade_id`')
+            ->order(['trade.update_time' => 'asc', 'trade.trade_id' => 'asc'])
+            ->limit(100)
+            ->select();
+        foreach ($trades as $trade) {
+            if ($processed >= 20) {
+                break;
+            }
+            $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($trade['payload_snapshot'] ?? ''));
+            $reconcile = (array)($snapshot['channel_reconcile'] ?? []);
+            if ((int)($reconcile['next_retry_at'] ?? 0) > time()) {
+                continue;
+            }
+            $processed++;
+            $attempt = (int)($reconcile['attempt_count'] ?? 0) + 1;
+            try {
+                $env = (int)($trade['env'] ?? $config['env'] ?? 0);
+                $appKey = $env === CommonGoodsModel::VP_ENV_SANDBOX
+                    ? (string)($config['sandbox_app_key'] ?? '')
+                    : (string)($config['production_app_key'] ?? '');
+                $openid = $this->resolveVirtualTradeOpenid($trade);
+                if ($appId === '' || $appSecret === '' || $appKey === '' || $openid === '') {
+                    throw new \RuntimeException($openid === '' ? 'missing_openid' : 'config_missing');
+                }
+                $payload = [
+                    'openid' => $openid,
+                    'env' => $env,
+                    'order_id' => (string)$trade['out_trade_no'],
+                ];
+                $payment = new WechatVirtualPayment($appId, $appSecret, $appKey);
+                $result = $payment->queryOrder($payload);
+                $errCode = (int)($result['errcode'] ?? -1);
+                $status = (int)($result['order']['status'] ?? -1);
+                PaymentTradeModel::mergePayloadSnapshot((int)$trade['trade_id'], [
+                    'timer_query_order' => [
+                        'queried_at' => time(),
+                        'payload' => $payload,
+                        'result' => $result,
+                        'status' => $status,
+                    ],
+                ]);
+                $resolved = PaymentTradeModel::detail((int)$trade['trade_id']);
+                $resolvedClass = (int)($resolved['channel_class'] ?? ChannelClassEnum::UNKNOWN);
+                $isResolved = $errCode === 0 && $resolvedClass !== ChannelClassEnum::UNKNOWN;
+                $retryAt = $isResolved ? 0 : time() + min(3600, 60 * (2 ** min($attempt - 1, 6)));
+                PaymentTradeModel::mergePayloadSnapshot((int)$trade['trade_id'], [
+                    'channel_reconcile' => [
+                        'attempt_count' => $attempt,
+                        'last_attempt_at' => time(),
+                        'next_retry_at' => $retryAt,
+                        'status' => $isResolved ? 'resolved' : ($errCode === 0 ? 'evidence_pending' : 'query_error'),
+                        'errcode' => $errCode,
+                    ],
+                ]);
+                $results[] = [
+                    'trade_id' => (int)$trade['trade_id'],
+                    'order_id' => (int)$trade['order_id'],
+                    'status' => $isResolved ? 'channel_reconciled' : ($errCode === 0 ? 'channel_evidence_pending' : 'channel_query_error'),
+                    'channel_class' => $resolvedClass,
+                    'errcode' => $errCode,
+                ];
+            } catch (\Throwable $e) {
+                $retryAt = time() + min(3600, 60 * (2 ** min($attempt - 1, 6)));
+                PaymentTradeModel::mergePayloadSnapshot((int)$trade['trade_id'], [
+                    'channel_reconcile' => [
+                        'attempt_count' => $attempt,
+                        'last_attempt_at' => time(),
+                        'next_retry_at' => $retryAt,
+                        'status' => 'error',
+                        'error' => $e->getMessage(),
+                    ],
+                ]);
+                $results[] = [
+                    'trade_id' => (int)$trade['trade_id'],
+                    'order_id' => (int)$trade['order_id'],
+                    'status' => 'channel_reconcile_error',
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+        return $results;
     }
 
     /**
@@ -392,8 +505,22 @@ class Order extends BaseService
                 if ((string)($snapshot['provide_goods']['status'] ?? '') === 'success') {
                     continue;
                 }
-                $claim = PaymentTradeModel::claimProvideGoodsDispatch((int)$trade['trade_id'], 'timer_compensation');
+                // order -> trade 原子建立发送权；风险冻结先提交时不再产生新 dispatch。
+                $claim = IosRefundRiskService::claimProvideGoodsDispatchIfAllowed(
+                    (int)$order['order_id'],
+                    (int)$trade['trade_id'],
+                    'timer_compensation'
+                );
                 if (empty($claim['claimed'])) {
+                    if ((string)($claim['reason'] ?? '') === 'ios_refund_risk_locked') {
+                        $currentStatus = (string)($snapshot['provide_goods']['status'] ?? '');
+                        if (!in_array($currentStatus, ['success', 'sending'], true)) {
+                            PaymentTradeModel::finishProvideGoodsDispatch((int)$trade['trade_id'], 'skipped', [
+                                'reason' => 'ios_refund_risk_locked',
+                            ]);
+                        }
+                        $results[] = ['order_id' => (int)$order['order_id'], 'status' => 'risk_locked'];
+                    }
                     continue;
                 }
                 $env = (int)($trade['env'] ?? $config['env'] ?? 0);
@@ -411,6 +538,14 @@ class Order extends BaseService
                     'order_id' => (string)$trade['out_trade_no'],
                     'env' => $env,
                 ];
+                $riskOrder = (new OrderModel)->where('order_id', '=', (int)$order['order_id'])->find();
+                if (!empty($riskOrder) && IosRefundRiskService::isLocked($riskOrder)) {
+                    PaymentTradeModel::finishProvideGoodsDispatch((int)$trade['trade_id'], 'skipped', [
+                        'reason' => 'ios_refund_risk_locked_before_send',
+                    ]);
+                    $results[] = ['order_id' => (int)$order['order_id'], 'status' => 'risk_locked_before_send'];
+                    continue;
+                }
                 $payment = new WechatVirtualPayment($appId, $appSecret, $appKey);
                 $result = $payment->notifyProvideGoods($payload);
                 PaymentTradeModel::finishProvideGoodsDispatch(

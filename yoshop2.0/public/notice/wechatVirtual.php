@@ -7,7 +7,7 @@ namespace think;
 if (version_compare(PHP_VERSION, '7.1.0', '<')) die('require PHP > 7.1.0 !');
 
 // 加载核心文件
-require __DIR__ . '/../vendor/autoload.php';
+require dirname(__DIR__, 2) . '/vendor/autoload.php';
 
 // 执行HTTP应用并响应
 $http = (new App())->http;

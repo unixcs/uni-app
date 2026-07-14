@@ -14,5 +14,7 @@ return [
         'virtual-payment:local-e2e' => \app\common\command\VirtualPaymentLocalE2e::class,
         'virtual-payment:oauth-audit' => \app\common\command\VirtualPaymentOauthAudit::class,
         'virtual-payment:watch-live' => \app\common\command\VirtualPaymentWatchLive::class,
+        'virtual-payment:channel-backfill' => \app\common\command\VirtualPaymentChannelBackfill::class,
+        'virtual-payment:ios-refund-risk-backfill' => \app\common\command\VirtualPaymentIosRefundRiskBackfill::class,
     ],
 ];

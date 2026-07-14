@@ -16,12 +16,19 @@ use app\api\service\User as UserService;
 use app\api\model\OrderGoods as OrderGoodsModel;
 use app\common\model\Order as OrderModel;
 use app\common\model\OrderRefund as OrderRefundModel;
+use app\common\model\PaymentTrade as PaymentTradeModel;
+use app\common\model\PaymentIosRefundInquiry as IosRefundInquiryModel;
 use app\common\enum\order\refund\AuditStatus as AuditStatusEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use app\common\enum\order\PayStatus as PayStatusEnum;
+use app\common\enum\order\iosRefund\RiskSource as IosRiskSourceEnum;
+use app\common\enum\order\iosRefund\RiskStatus as IosRiskStatusEnum;
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
+use app\common\service\order\Refund as RefundService;
+use app\common\library\helper;
 use app\store\model\OrderRefund as StoreOrderRefundModel;
 use cores\exception\BaseException;
 
@@ -43,7 +50,7 @@ class OrderRefund extends OrderRefundModel
         $auditStatus = (int)($data['audit_status'] ?? AuditStatusEnum::WAIT);
 
         if ($status === RefundStatusEnum::COMPLETED) {
-            return [
+            $projection = [
                 'state' => $status,
                 'state_text' => '已退款',
                 'service_state' => 'refunded',
@@ -51,10 +58,8 @@ class OrderRefund extends OrderRefundModel
                 'audit_status' => $auditStatus,
                 'is_terminal' => true,
             ];
-        }
-
-        if ($status === RefundStatusEnum::CANCELLED) {
-            return [
+        } elseif ($status === RefundStatusEnum::CANCELLED) {
+            $projection = [
                 'state' => $status,
                 'state_text' => '已取消',
                 'service_state' => 'cancelled',
@@ -62,10 +67,8 @@ class OrderRefund extends OrderRefundModel
                 'audit_status' => $auditStatus,
                 'is_terminal' => true,
             ];
-        }
-
-        if ($status === RefundStatusEnum::REJECTED) {
-            return [
+        } elseif ($status === RefundStatusEnum::REJECTED) {
+            $projection = [
                 'state' => $status,
                 'state_text' => '退款已拒绝',
                 'service_state' => 'rejected',
@@ -73,10 +76,8 @@ class OrderRefund extends OrderRefundModel
                 'audit_status' => $auditStatus,
                 'is_terminal' => true,
             ];
-        }
-
-        if ($auditStatus === AuditStatusEnum::WAIT) {
-            return [
+        } elseif ($auditStatus === AuditStatusEnum::WAIT) {
+            $projection = [
                 'state' => $status,
                 'state_text' => '退款审核中',
                 'service_state' => 'reviewing',
@@ -84,16 +85,44 @@ class OrderRefund extends OrderRefundModel
                 'audit_status' => $auditStatus,
                 'is_terminal' => false,
             ];
+        } else {
+            $projection = [
+                'state' => $status,
+                'state_text' => '退款处理中',
+                'service_state' => 'processing',
+                'service_state_text' => '退款处理中',
+                'audit_status' => $auditStatus,
+                'is_terminal' => false,
+            ];
         }
 
-        return [
-            'state' => $status,
-            'state_text' => '退款处理中',
-            'service_state' => 'processing',
-            'service_state_text' => '退款处理中',
-            'audit_status' => $auditStatus,
-            'is_terminal' => false,
-        ];
+        $orderData = $data['orderData'] ?? [];
+        $trade = PaymentTradeModel::resolveVirtualTradeForRefundContext(
+            (int)($data['order_id'] ?? ($orderData['order_id'] ?? 0)),
+            (int)($orderData['trade_id'] ?? 0),
+            (int)($data['order_refund_id'] ?? 0)
+        );
+        if (empty($orderData) && !empty($data['order_id'])) {
+            $orderData = \app\common\model\Order::detail((int)$data['order_id']);
+        }
+        $riskProjection = IosRefundRiskService::buildProjection(
+            $orderData,
+            $trade,
+            $data,
+            !empty($data['ios_refund_latest_inquiry']) ? (array)$data['ios_refund_latest_inquiry'] : null
+        );
+        $projection = array_merge($projection, $riskProjection, [
+            'refund_entry_mode' => (string)($riskProjection['refund_entry_mode'] ?? 'developer_refund'),
+            'refund_guidance' => (string)($riskProjection['refund_guidance'] ?? ''),
+            'display_state' => (string)($riskProjection['refund_display_state'] ?? ''),
+            'display_state_text' => (string)($riskProjection['refund_display_state_text'] ?? ''),
+        ]);
+        if (!empty($projection['ios_apple_refund_required']) && $projection['display_state_text'] !== '') {
+            $projection['state_text'] = $projection['display_state_text'];
+            $projection['service_state'] = $projection['display_state'] ?: $projection['service_state'];
+            $projection['service_state_text'] = $projection['display_state_text'];
+        }
+        return $projection;
     }
 
     /**
@@ -118,6 +147,16 @@ class OrderRefund extends OrderRefundModel
         'state_text',   // 售后单状态文字描述
         'service_state',
         'service_state_text',
+        'refund_guidance',
+        'refund_entry_mode',
+        'ios_apple_refund_required',
+        'ios_refund_risk_status',
+        'ios_refund_risk_text',
+        'ios_refund_inquiry_received',
+        'latest_ios_refund_inquiry',
+        'merchant_refund_review_status',
+        'display_state',
+        'display_state_text',
         'action_flags',
     ];
 
@@ -129,7 +168,7 @@ class OrderRefund extends OrderRefundModel
      */
     public function getStateTextAttr($value, $data): string
     {
-        return static::buildServiceProjection((array)$data)['state_text'] ?? (string)$value;
+        return $this->getServiceProjectionForAttr((array)$data)['state_text'] ?? (string)$value;
     }
 
     /**
@@ -140,7 +179,7 @@ class OrderRefund extends OrderRefundModel
      */
     public function getServiceStateAttr($value, $data): string
     {
-        return static::buildServiceProjection((array)$data)['service_state'] ?? '';
+        return $this->getServiceProjectionForAttr((array)$data)['service_state'] ?? '';
     }
 
     /**
@@ -151,7 +190,90 @@ class OrderRefund extends OrderRefundModel
      */
     public function getServiceStateTextAttr($value, $data): string
     {
-        return static::buildServiceProjection((array)$data)['service_state_text'] ?? (string)$value;
+        return $this->getServiceProjectionForAttr((array)$data)['service_state_text'] ?? (string)$value;
+    }
+
+    /**
+     * 获取器：退款引导文案
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getRefundGuidanceAttr($value, $data): string
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['refund_guidance'] ?? '';
+    }
+
+    /**
+     * 获取器：退款入口模式
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getRefundEntryModeAttr($value, $data): string
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['refund_entry_mode'] ?? 'developer_refund';
+    }
+
+    /**
+     * 获取器：是否需要 iOS App Store 退款引导
+     * @param $value
+     * @param $data
+     * @return bool
+     */
+    public function getIosAppleRefundRequiredAttr($value, $data): bool
+    {
+        return !empty($this->getServiceProjectionForAttr((array)$data)['ios_apple_refund_required']);
+    }
+
+    /**
+     * 获取器：iOS退款风险与问询投影。
+     */
+    public function getIosRefundRiskStatusAttr($value, $data): int
+    {
+        return (int)($this->getServiceProjectionForAttr((array)$data)['ios_refund_risk_status'] ?? 0);
+    }
+
+    public function getIosRefundRiskTextAttr($value, $data): string
+    {
+        return (string)($this->getServiceProjectionForAttr((array)$data)['ios_refund_risk_text'] ?? '');
+    }
+
+    public function getIosRefundInquiryReceivedAttr($value, $data): bool
+    {
+        return (bool)($this->getServiceProjectionForAttr((array)$data)['ios_refund_inquiry_received'] ?? false);
+    }
+
+    public function getLatestIosRefundInquiryAttr($value, $data)
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['latest_ios_refund_inquiry'] ?? null;
+    }
+
+    public function getMerchantRefundReviewStatusAttr($value, $data)
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['merchant_refund_review_status'] ?? null;
+    }
+
+    /**
+     * 获取器：退款展示状态
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getDisplayStateAttr($value, $data): string
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['display_state'] ?? '';
+    }
+
+    /**
+     * 获取器：退款展示状态文案
+     * @param $value
+     * @param $data
+     * @return string
+     */
+    public function getDisplayStateTextAttr($value, $data): string
+    {
+        return $this->getServiceProjectionForAttr((array)$data)['display_state_text'] ?? '';
     }
 
     /**
@@ -162,9 +284,11 @@ class OrderRefund extends OrderRefundModel
      */
     public function getActionFlagsAttr($value, $data): array
     {
+        $projection = $this->getServiceProjectionForAttr((array)$data);
+        $isIos = !empty($projection['ios_apple_refund_required']);
         return [
-            'can_cancel' => $data['status'] == RefundStatusEnum::NORMAL && $data['audit_status'] == AuditStatusEnum::WAIT,
-            'can_reapply' => $data['status'] == RefundStatusEnum::REJECTED,
+            'can_cancel' => !$isIos && $data['status'] == RefundStatusEnum::NORMAL && $data['audit_status'] == AuditStatusEnum::WAIT,
+            'can_reapply' => !$isIos && $data['status'] == RefundStatusEnum::REJECTED,
         ];
     }
 
@@ -186,7 +310,7 @@ class OrderRefund extends OrderRefundModel
         // 当前用户ID
         $userId = UserService::getCurrentLoginUserId();
         // 查询列表记录
-        return $this->with(['orderGoods.image', 'orderData'])
+        $list = $this->with(['orderGoods.image', 'orderData'])
             ->alias('refund')
             ->field('refund.*')
             ->join('order', 'order.order_id = refund.order_id')
@@ -195,6 +319,15 @@ class OrderRefund extends OrderRefundModel
             ->where('order.is_delete', '=', 0)
             ->order(['refund.create_time' => 'desc'])
             ->paginate(15);
+        $orderIds = [];
+        foreach ($list as $item) {
+            $orderIds[] = (int)$item['order_id'];
+        }
+        $inquiryMap = IosRefundInquiryModel::latestMapByOrderIds($orderIds);
+        foreach ($list as $item) {
+            $item['ios_refund_latest_inquiry'] = $inquiryMap[(int)$item['order_id']] ?? null;
+        }
+        return $list;
     }
 
     /**
@@ -219,6 +352,9 @@ class OrderRefund extends OrderRefundModel
             ->where('order.is_delete', '=', 0)
             ->find();
         empty($detail) && throwError('未找到该售后单');
+        $latestInquiry = IosRefundInquiryModel::latestByOrderId((int)$detail['order_id']);
+        $detail['ios_refund_latest_inquiry'] = $latestInquiry ? IosRefundInquiryModel::project($latestInquiry->toArray()) : null;
+        $detail['ios_refund_inquiry_timeline'] = IosRefundInquiryModel::timelineByOrderId((int)$detail['order_id']);
         return $detail;
     }
 
@@ -257,6 +393,9 @@ class OrderRefund extends OrderRefundModel
         if (empty($order)) {
             throwError('订单不存在或不属于当前用户');
         }
+        if (IosRefundRiskService::isLocked($order)) {
+            throwError('该iOS订单已提交退款申请或进入App Store退款流程，不可重复申请');
+        }
         if ($this->hasActiveRefundByOrderId((int)$goods['order_id'])) {
             throwError('当前订单已存在进行中的售后单');
         }
@@ -273,6 +412,26 @@ class OrderRefund extends OrderRefundModel
         } elseif ($order['delivery_status'] != DeliveryStatusEnum::NOT_DELIVERED) {
             throwError('当前订单状态不允许申请售后');
         }
+        $refundTrade = PaymentTradeModel::resolveVirtualTradeForRefundContext(
+            (int)$goods['order_id'],
+            (int)($order['trade_id'] ?? 0),
+            0
+        );
+        if (!empty($refundTrade)
+            && (int)($order['trade_id'] ?? 0) > 0
+            && (int)$refundTrade['trade_id'] !== (int)$order['trade_id']) {
+            // 历史虚拟尝试不能覆盖当前最终支付交易的退款路由。
+            $refundTrade = null;
+        }
+        if (!empty($refundTrade)) {
+            // 必须在 apply() 的订单/退款/交易锁事务之外访问微信，避免网络等待扩大锁区间。
+            $refundTrade = (new RefundService())->convergeVirtualPaymentChannelForRefund($order, $refundTrade);
+        }
+        $refundProjection = PaymentTradeModel::buildVirtualRefundProjection($refundTrade);
+        $goods['refund_entry_mode'] = (string)($refundProjection['refund_entry_mode'] ?? 'developer_refund');
+        $goods['ios_apple_refund_required'] = (bool)($refundProjection['ios_apple_refund_required'] ?? false);
+        $goods['refund_guidance'] = (string)($refundProjection['refund_guidance'] ?? '');
+        $goods['refund_display_state_text'] = (string)($refundProjection['refund_display_state_text'] ?? '');
         return $goods;
     }
 
@@ -296,40 +455,97 @@ class OrderRefund extends OrderRefundModel
      */
     public function apply(int $orderGoodsId, array $data)
     {
-        // 订单商品详情
+        $userId = UserService::getCurrentLoginUserId();
         $goods = $this->getRefundGoods($orderGoodsId);
-        if ($this->hasActiveRefundByOrderId((int)$goods['order_id'])) {
-            throwError('当前订单已存在进行中的售后单');
-        }
-        return $this->transaction(function () use ($orderGoodsId, $data, $goods) {
-            $order = OrderModel::detail(['order_id' => $goods['order_id'], 'user_id' => UserService::getCurrentLoginUserId()], ['goods']);
+
+        return $this->transaction(function () use ($orderGoodsId, $data, $goods, $userId) {
+            // 固定锁顺序：order -> all service refunds -> final trade。
+            $lockedOrder = (new OrderModel)
+                ->where('order_id', '=', (int)$goods['order_id'])
+                ->where('user_id', '=', $userId)
+                ->lock(true)
+                ->find();
+            if (empty($lockedOrder)) {
+                throwError('订单不存在或不属于当前用户');
+            }
+            $lockedRefunds = (new static)
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->where('order_id', '=', (int)$lockedOrder['order_id'])
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            $lockedTrade = null;
+            if ((int)($lockedOrder['trade_id'] ?? 0) > 0) {
+                $lockedTrade = (new PaymentTradeModel)
+                    ->where('trade_id', '=', (int)$lockedOrder['trade_id'])
+                    ->lock(true)
+                    ->find();
+            }
+
+            $order = OrderModel::detail(['order_id' => (int)$lockedOrder['order_id'], 'user_id' => $userId], ['goods']);
             if (empty($order)) {
                 throwError('订单不存在或不属于当前用户');
             }
-            if ($this->hasActiveRefundByOrderId((int)$goods['order_id'])) {
-                throwError('当前订单已存在进行中的售后单');
-            }
-
             $refundMode = OrderModel::isServiceOrderData($order)
                 ? OrderModel::getServiceRefundMode($order)
                 : OrderModel::SERVICE_REFUND_MODE_AUTO;
-
             if ($refundMode === OrderModel::SERVICE_REFUND_MODE_NONE) {
                 throwError('当前服务阶段不允许申请退款');
             }
 
+            $isIosApple = !empty($lockedTrade)
+                && (int)$lockedTrade['trade_id'] === (int)$lockedOrder['trade_id']
+                && (int)$lockedTrade['order_id'] === (int)$lockedOrder['order_id']
+                && (int)$lockedTrade['store_id'] === (int)$lockedOrder['store_id']
+                && (int)$lockedTrade['user_id'] === (int)$lockedOrder['user_id']
+                && PaymentTradeModel::isIosAppleVirtualTrade($lockedTrade);
+            if ($isIosApple && (int)($lockedOrder['ios_refund_risk_status'] ?? IosRiskStatusEnum::NONE) !== IosRiskStatusEnum::NONE) {
+                throwError('该iOS订单已提交退款申请或进入App Store退款流程，不可重复申请');
+            }
+            if (!$lockedRefunds->isEmpty()) {
+                // iOS 已结束/驳回的本地申请也不能重建；其他渠道保持原有“进行中不可重复”语义。
+                foreach ($lockedRefunds as $existingRefund) {
+                    if ($isIosApple || (int)$existingRefund['status'] === RefundStatusEnum::NORMAL) {
+                        throwError('当前订单已存在退款申请');
+                    }
+                }
+            }
+
             $isAutoRefund = $refundMode === OrderModel::SERVICE_REFUND_MODE_AUTO;
-            // 新增售后单记录
-            $this->save([
+            $saveData = [
                 'order_goods_id' => $orderGoodsId,
-                'order_id' => $goods['order_id'],
-                'user_id' => UserService::getCurrentLoginUserId(),
+                'order_id' => (int)$goods['order_id'],
+                'user_id' => $userId,
                 'type' => RefundTypeEnum::SERVICE,
                 'apply_desc' => (string)($data['content'] ?? '用户申请退款'),
                 'audit_status' => $isAutoRefund ? AuditStatusEnum::REVIEWED : AuditStatusEnum::WAIT,
                 'status' => RefundStatusEnum::NORMAL,
-                'store_id' => self::$storeId
-            ]);
+                'store_id' => self::$storeId,
+            ];
+            if ($this->save($saveData) === false) {
+                throwError('退款单创建失败');
+            }
+
+            if ($isIosApple) {
+                if (!IosRefundRiskService::lockOrder($lockedOrder, IosRiskSourceEnum::LOCAL_APPLY)) {
+                    throwError('建立iOS退款服务冻结失败');
+                }
+                $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($lockedTrade['payload_snapshot'] ?? ''));
+                $snapshot['virtual_refund'] = array_merge((array)($snapshot['virtual_refund'] ?? []), [
+                    'status' => 'waiting_ios_apple_refund',
+                    'requested_at' => time(),
+                    'order_refund_id' => (int)$this['order_refund_id'],
+                    'ios_refund_required' => true,
+                    'source' => 'refund_apply',
+                    'message' => 'iOS Apple虚拟支付订单等待用户前往App Store申请及Apple最终通知',
+                ]);
+                if ($lockedTrade->save([
+                    'payload_snapshot' => helper::jsonEncode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                ]) === false) {
+                    throwError('记录iOS退款申请交易快照失败');
+                }
+                return true;
+            }
 
             if ($isAutoRefund) {
                 $storeRefund = StoreOrderRefundModel::detail((int)$this['order_refund_id'], ['orderGoods']);

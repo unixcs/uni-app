@@ -14,7 +14,10 @@ namespace app\api\model;
 
 use app\common\model\PaymentTrade as PaymentTradeModel;
 use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
+use app\common\enum\payment\trade\ChannelClass as ChannelClassEnum;
 use cores\exception\BaseException;
+use app\common\library\helper;
+use think\facade\Db;
 
 /**
  * 模型类：第三方支付交易记录
@@ -48,35 +51,67 @@ class PaymentTrade extends PaymentTradeModel
      */
     public static function record($orderInfo, string $method, string $client, int $orderType, array $payment): bool
     {
-        // 实例化模型
-        $model = new static;
-        // 查询是否存在交易记录
-        $record = $model->detailByOrderId($orderInfo['order_id'], $method, $client, $orderType);
-        $outTradeNo = (string)($payment['out_trade_no'] ?? '');
-        if ($record && $model->shouldCreateNewAttempt($record, $outTradeNo, $payment)) {
-            $record = null;
-        }
-        // 新增或者更新记录
-        return ($record ?: $model)->save([
-            'client' => $client,
-            'pay_method' => $method,
-            'order_type' => $orderType,
-            'order_id' => $orderInfo['order_id'],
-            'order_no' => $orderInfo['order_no'],
-            'user_id' => $orderInfo['user_id'],
-            'out_trade_no' => $outTradeNo,
-            'prepay_id' => $payment['prepay_id'] ?? '',
-            'trade_state' => TradeStatusEnum::UNPAID,
-            'platform' => $payment['platform'] ?? '',
-            'env' => isset($payment['env']) ? (int)$payment['env'] : 0,
-            'product_id' => $payment['product_id'] ?? '',
-            'goods_price' => isset($payment['goods_price']) ? (int)$payment['goods_price'] : 0,
-            'attach' => $payment['attach'] ?? '',
-            'notify_times' => isset($payment['notify_times']) ? (int)$payment['notify_times'] : 0,
-            'last_notify_time' => isset($payment['last_notify_time']) ? (int)$payment['last_notify_time'] : 0,
-            'payload_snapshot' => $payment['payload_snapshot'] ?? '',
-            'store_id' => self::$storeId,
-        ]);
+        return Db::transaction(function () use ($orderInfo, $method, $client, $orderType, $payment) {
+            $model = new static;
+            // 与通知/查单更新共享 payment_trade 行锁，防止旧读覆盖 Apple 强证据。
+            $record = $model->where([
+                'order_id' => (int)$orderInfo['order_id'],
+                'pay_method' => $method,
+                'client' => $client,
+                'order_type' => $orderType,
+                'store_id' => self::$storeId,
+            ])->order(['trade_id' => 'desc'])->lock(true)->find();
+            $outTradeNo = (string)($payment['out_trade_no'] ?? '');
+            if ($record && in_array((int)$record['trade_state'], [TradeStatusEnum::SUCCESS, TradeStatusEnum::REFUND], true)) {
+                throwError('该支付订单已完成交易');
+            }
+            if ($record && $model->shouldCreateNewAttempt($record, $outTradeNo, $payment)) {
+                $existingPlatform = (string)($record['platform'] ?? '');
+                $incomingPlatform = (string)($payment['platform'] ?? '');
+                if (($existingPlatform === 'wechat_virtual' || $incomingPlatform === 'wechat_virtual')
+                    && (int)$record['trade_state'] === TradeStatusEnum::UNPAID) {
+                    throwError('支付结果确认中，请勿重复支付');
+                }
+                // CLOSED 代表旧尝试已明确终态未支付，允许保留一条新的虚拟支付尝试。
+                if ((int)$record['trade_state'] !== TradeStatusEnum::CLOSED
+                    && ($existingPlatform === 'wechat_virtual' || $incomingPlatform === 'wechat_virtual')) {
+                    throwError('上一笔支付尚未结束，请勿重复支付');
+                }
+                $record = null;
+            }
+            $platform = (string)($payment['platform'] ?? '');
+            $incomingSnapshot = PaymentTradeModel::decodePayloadSnapshot((string)($payment['payload_snapshot'] ?? ''));
+            $currentSnapshot = $record
+                ? PaymentTradeModel::decodePayloadSnapshot((string)($record['payload_snapshot'] ?? ''))
+                : [];
+            $snapshot = array_replace_recursive($currentSnapshot, $incomingSnapshot);
+            $currentClass = $record ? (int)($record['channel_class'] ?? ChannelClassEnum::UNKNOWN) : ChannelClassEnum::UNKNOWN;
+            $channelClass = $platform === 'wechat_virtual'
+                ? PaymentTradeModel::classifyChannelClass($platform, $snapshot, $currentClass)
+                : ChannelClassEnum::NON_IOS;
+
+            return ($record ?: $model)->save([
+                'client' => $client,
+                'pay_method' => $method,
+                'order_type' => $orderType,
+                'order_id' => $orderInfo['order_id'],
+                'order_no' => $orderInfo['order_no'],
+                'user_id' => $orderInfo['user_id'],
+                'out_trade_no' => $outTradeNo,
+                'prepay_id' => $payment['prepay_id'] ?? '',
+                'trade_state' => TradeStatusEnum::UNPAID,
+                'platform' => $platform,
+                'channel_class' => $channelClass,
+                'env' => isset($payment['env']) ? (int)$payment['env'] : 0,
+                'product_id' => $payment['product_id'] ?? '',
+                'goods_price' => isset($payment['goods_price']) ? (int)$payment['goods_price'] : 0,
+                'attach' => $payment['attach'] ?? '',
+                'notify_times' => isset($payment['notify_times']) ? (int)$payment['notify_times'] : 0,
+                'last_notify_time' => isset($payment['last_notify_time']) ? (int)$payment['last_notify_time'] : 0,
+                'payload_snapshot' => helper::jsonEncode($snapshot),
+                'store_id' => self::$storeId,
+            ]);
+        });
     }
 
     /**

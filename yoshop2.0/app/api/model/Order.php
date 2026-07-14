@@ -15,7 +15,10 @@ namespace app\api\model;
 use app\api\model\{Goods as GoodsModel, OrderRefund as OrderRefundModel, Setting as SettingModel};
 use app\api\service\{User as UserService, order\source\Factory as OrderSourceFactory};
 use app\common\model\Order as OrderModel;
+use app\common\model\PaymentTrade as PaymentTradeModel;
+use app\common\model\PaymentIosRefundInquiry as IosRefundInquiryModel;
 use app\common\service\{Order as OrderService, order\Complete as OrderCompleteService};
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
 use app\common\enum\{
     order\DataType as DataTypeEnum,
     payment\Method as PaymentMethodEnum,
@@ -155,8 +158,17 @@ class Order extends OrderModel
                 }
             }
         }
-        // 查询列表数据
-        return $query->order(['create_time' => 'desc'])->paginate(15);
+        // 查询列表数据，并批量附加最新 Apple 问询，避免序列化逐行查询。
+        $list = $query->order(['create_time' => 'desc'])->paginate(15);
+        $orderIds = [];
+        foreach ($list as $item) {
+            $orderIds[] = (int)$item['order_id'];
+        }
+        $inquiryMap = IosRefundInquiryModel::latestMapByOrderIds($orderIds);
+        foreach ($list as $item) {
+            $item['ios_refund_latest_inquiry'] = $inquiryMap[(int)$item['order_id']] ?? null;
+        }
+        return $list;
     }
 
     /**
@@ -588,10 +600,22 @@ class Order extends OrderModel
      */
     public function getActionFlagsAttr($value, $data): array
     {
+        $refundProjection = $this->getVirtualRefundProjectionForOrder($data);
         return [
             'can_cancel' => $this->getCanCancelAttr($value, $data),
             'can_pay' => $this->getCanPayAttr($value, $data),
             'can_apply_refund' => $this->getCanApplyRefundAttr($value, $data),
+            'ios_apple_refund_required' => (bool)($refundProjection['ios_apple_refund_required'] ?? false),
+            'ios_refund_risk_status' => (int)($refundProjection['ios_refund_risk_status'] ?? 0),
+            'ios_refund_risk_text' => (string)($refundProjection['ios_refund_risk_text'] ?? ''),
+            'ios_refund_inquiry_received' => (bool)($refundProjection['ios_refund_inquiry_received'] ?? false),
+            'latest_ios_refund_inquiry' => $refundProjection['latest_ios_refund_inquiry'] ?? null,
+            'merchant_refund_review_status' => $refundProjection['merchant_refund_review_status'] ?? null,
+            'refund_entry_mode' => (string)($refundProjection['refund_entry_mode'] ?? 'developer_refund'),
+            'refund_display_state' => (string)($refundProjection['refund_display_state'] ?? ''),
+            'refund_display_state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
+            'refund_guidance' => (string)($refundProjection['refund_guidance'] ?? ''),
+            'can_cancel_refund' => (bool)($refundProjection['can_cancel'] ?? false),
         ];
     }
 
@@ -642,21 +666,56 @@ class Order extends OrderModel
     public function getRefundInfoAttr($value): ?array
     {
         $refund = $this->getProjectedRefund();
-        if (empty($refund)) {
+        if (!empty($refund)) {
+            $projection = OrderRefundModel::buildServiceProjection((array)$refund);
+            return [
+                'order_refund_id' => (int)($refund['order_refund_id'] ?? 0),
+                'state' => (int)($projection['state'] ?? ($refund['status'] ?? 0)),
+                'state_text' => (string)($projection['state_text'] ?? ''),
+                'service_state' => (string)($projection['service_state'] ?? ''),
+                'service_state_text' => (string)($projection['service_state_text'] ?? ''),
+                'apply_desc' => (string)($refund['apply_desc'] ?? ''),
+                'refuse_desc' => (string)($refund['refuse_desc'] ?? ''),
+                'refund_money' => $refund['refund_money'] ?? '',
+                'audit_status' => (int)($refund['audit_status'] ?? 0),
+                'is_terminal' => (bool)($projection['is_terminal'] ?? false),
+                'ios_apple_refund_required' => (bool)($projection['ios_apple_refund_required'] ?? false),
+                'ios_refund_risk_status' => (int)($projection['ios_refund_risk_status'] ?? 0),
+                'ios_refund_risk_text' => (string)($projection['ios_refund_risk_text'] ?? ''),
+                'ios_refund_inquiry_received' => (bool)($projection['ios_refund_inquiry_received'] ?? false),
+                'latest_ios_refund_inquiry' => $projection['latest_ios_refund_inquiry'] ?? null,
+                'can_cancel' => (bool)($projection['can_cancel'] ?? false),
+                'refund_entry_mode' => (string)($projection['refund_entry_mode'] ?? 'developer_refund'),
+                'refund_guidance' => (string)($projection['refund_guidance'] ?? ''),
+                'display_state' => (string)($projection['display_state'] ?? ''),
+                'display_state_text' => (string)($projection['display_state_text'] ?? ''),
+            ];
+        }
+        $refundProjection = $this->getVirtualRefundProjectionForOrder($this->getData());
+        if (empty($refundProjection['ios_apple_refund_required'])) {
             return null;
         }
-        $projection = OrderRefundModel::buildServiceProjection((array)$refund);
         return [
-            'order_refund_id' => (int)($refund['order_refund_id'] ?? 0),
-            'state' => (int)($projection['state'] ?? ($refund['status'] ?? 0)),
-            'state_text' => (string)($projection['state_text'] ?? ''),
-            'service_state' => (string)($projection['service_state'] ?? ''),
-            'service_state_text' => (string)($projection['service_state_text'] ?? ''),
-            'apply_desc' => (string)($refund['apply_desc'] ?? ''),
-            'refuse_desc' => (string)($refund['refuse_desc'] ?? ''),
-            'refund_money' => $refund['refund_money'] ?? '',
-            'audit_status' => (int)($refund['audit_status'] ?? 0),
-            'is_terminal' => (bool)($projection['is_terminal'] ?? false),
+            'order_refund_id' => 0,
+            'state' => 0,
+            'state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
+            'service_state' => (string)($refundProjection['refund_display_state'] ?? ''),
+            'service_state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
+            'apply_desc' => '',
+            'refuse_desc' => '',
+            'refund_money' => '',
+            'audit_status' => 0,
+            'is_terminal' => false,
+            'ios_apple_refund_required' => true,
+            'ios_refund_risk_status' => (int)($refundProjection['ios_refund_risk_status'] ?? 0),
+            'ios_refund_risk_text' => (string)($refundProjection['ios_refund_risk_text'] ?? ''),
+            'ios_refund_inquiry_received' => (bool)($refundProjection['ios_refund_inquiry_received'] ?? false),
+            'latest_ios_refund_inquiry' => $refundProjection['latest_ios_refund_inquiry'] ?? null,
+            'can_cancel' => false,
+            'refund_entry_mode' => (string)($refundProjection['refund_entry_mode'] ?? 'app_store_guided'),
+            'refund_guidance' => (string)($refundProjection['refund_guidance'] ?? ''),
+            'display_state' => (string)($refundProjection['refund_display_state'] ?? ''),
+            'display_state_text' => (string)($refundProjection['refund_display_state_text'] ?? ''),
         ];
     }
 
@@ -672,6 +731,29 @@ class Order extends OrderModel
             return $activeRefund;
         }
         return $this->getLatestRefund();
+    }
+
+    /**
+     * 获取订单维度的虚拟支付退款模式投影。
+     * @param array|self|null $order
+     * @return array
+     */
+    private function getVirtualRefundProjectionForOrder($order = null): array
+    {
+        $order = $order ?: $this;
+        $orderData = $order instanceof self ? $order->getData() : (array)$order;
+        $refund = $this->getProjectedRefund();
+        $trade = PaymentTradeModel::resolveVirtualTradeForRefundContext(
+            (int)($orderData['order_id'] ?? 0),
+            (int)($orderData['trade_id'] ?? 0),
+            (int)($refund['order_refund_id'] ?? 0)
+        );
+        return IosRefundRiskService::buildProjection(
+            $orderData,
+            $trade,
+            (array)$refund,
+            !empty($orderData['ios_refund_latest_inquiry']) ? (array)$orderData['ios_refund_latest_inquiry'] : null
+        );
     }
 
     /**
@@ -745,6 +827,9 @@ class Order extends OrderModel
      */
     public function getCanApplyRefundAttr($value, $data): bool
     {
+        if (IosRefundRiskService::isLocked($data)) {
+            return false;
+        }
         return static::isAllowRefund($this);
     }
 

@@ -26,15 +26,20 @@ use app\common\service\BaseService;
 use app\common\service\Order as OrderService;
 use app\common\enum\Client as ClientEnum;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
+use app\common\enum\order\PayStatus as PayStatusEnum;
+use app\common\enum\order\iosRefund\RiskSource as IosRiskSourceEnum;
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
 use app\common\enum\order\refund\AuditStatus as RefundAuditStatusEnum;
 use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\order\refund\RefundType as RefundTypeEnum;
 use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
+use app\common\enum\payment\trade\ChannelClass as ChannelClassEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
 use app\common\enum\user\balanceLog\Scene as SceneEnum;
 use app\common\model\Goods as CommonGoodsModel;
 use app\common\library\wechat\VirtualPayment as WechatVirtualPayment;
+use app\common\library\Log;
 use app\common\library\payment\Facade as PaymentFacade;
 use app\common\library\helper;
 use cores\exception\BaseException;
@@ -49,6 +54,91 @@ class Refund extends BaseService
 {
     private const VIRTUAL_ORDER_STATUS_REFUNDED = 5;
     private const VIRTUAL_ORDER_STATUS_USER_REFUNDED = 8;
+    private const VIRTUAL_IOS_APPLE_ORDER_TYPE = 7;
+
+    /**
+     * 在创建退款单事务之前收口虚拟支付渠道分类。
+     * 支付成功通知不一定携带 order_type，UNKNOWN 交易必须主动查单后再决定
+     * 走开发者退款还是 iOS App Store 流程。
+     *
+     * @param mixed $order
+     * @param PaymentTradeModel $tradeInfo
+     * @return PaymentTradeModel
+     * @throws BaseException
+     */
+    public function convergeVirtualPaymentChannelForRefund($order, PaymentTradeModel $tradeInfo): PaymentTradeModel
+    {
+        if ((string)($tradeInfo['platform'] ?? '') !== 'wechat_virtual') {
+            return $tradeInfo;
+        }
+
+        $bindingMatches = (int)($order['order_id'] ?? 0) > 0
+            && (int)($order['trade_id'] ?? 0) === (int)($tradeInfo['trade_id'] ?? 0)
+            && (int)($tradeInfo['order_id'] ?? 0) === (int)$order['order_id']
+            && (int)($tradeInfo['store_id'] ?? 0) === (int)$order['store_id']
+            && (int)($tradeInfo['user_id'] ?? 0) === (int)$order['user_id'];
+        if (!$bindingMatches) {
+            throwError('支付交易与订单不匹配，无法确认退款渠道');
+        }
+
+        $channelClass = (int)($tradeInfo['channel_class'] ?? ChannelClassEnum::UNKNOWN);
+        if ($channelClass !== ChannelClassEnum::UNKNOWN) {
+            return $tradeInfo;
+        }
+
+        $isPaidOrder = (int)($order['pay_status'] ?? 0) === PayStatusEnum::SUCCESS;
+        $tradeState = (int)($tradeInfo['trade_state'] ?? TradeStatusEnum::UNPAID);
+        $isPaidTrade = in_array($tradeState, [TradeStatusEnum::SUCCESS, TradeStatusEnum::REFUND], true);
+        if (!$isPaidOrder || !$isPaidTrade) {
+            throwError('支付结果尚未完成，无法确认退款渠道');
+        }
+
+        try {
+            $queryOrder = $this->queryVirtualRefundState($order, $tradeInfo);
+        } catch (\Throwable $e) {
+            $this->logVirtualRefundObservation('refund_channel_preflight_query_failed', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'error' => $e->getMessage(),
+            ]);
+            throwError('支付渠道确认失败，请稍后重试退款申请');
+        }
+
+        $resolvedTrade = PaymentTradeModel::detail((int)$tradeInfo['trade_id']);
+        if (empty($resolvedTrade)
+            || (int)($resolvedTrade['trade_id'] ?? 0) !== (int)($order['trade_id'] ?? 0)
+            || (int)($resolvedTrade['order_id'] ?? 0) !== (int)$order['order_id']
+            || (int)($resolvedTrade['store_id'] ?? 0) !== (int)$order['store_id']
+            || (int)($resolvedTrade['user_id'] ?? 0) !== (int)$order['user_id']) {
+            throwError('支付交易状态已变化，无法确认退款渠道');
+        }
+
+        $resolvedClass = (int)($resolvedTrade['channel_class'] ?? ChannelClassEnum::UNKNOWN);
+        $orderType = array_key_exists('order_type', $queryOrder)
+            ? (int)$queryOrder['order_type']
+            : null;
+        if ($resolvedClass === ChannelClassEnum::UNKNOWN) {
+            $this->logVirtualRefundObservation('refund_channel_preflight_unresolved', [
+                'trade_id' => (int)$resolvedTrade['trade_id'],
+                'order_id' => (int)$resolvedTrade['order_id'],
+                'out_trade_no' => (string)($resolvedTrade['out_trade_no'] ?? ''),
+                'query_status' => (int)($queryOrder['status'] ?? -1),
+                'order_type' => $orderType,
+            ]);
+            throwError('支付渠道暂无法确认，请稍后重试退款申请');
+        }
+
+        $this->logVirtualRefundObservation('refund_channel_preflight_resolved', [
+            'trade_id' => (int)$resolvedTrade['trade_id'],
+            'order_id' => (int)$resolvedTrade['order_id'],
+            'out_trade_no' => (string)($resolvedTrade['out_trade_no'] ?? ''),
+            'channel_class' => $resolvedClass,
+            'query_status' => (int)($queryOrder['status'] ?? -1),
+            'order_type' => $orderType,
+        ]);
+        return $resolvedTrade;
+    }
 
     /**
      * 执行订单退款
@@ -140,9 +230,40 @@ class Refund extends BaseService
         $isDuplicatePayment = !empty($context['duplicate_payment']);
         if ($isDuplicatePayment
             && !empty($virtualRefund['duplicate_payment'])
-            && \in_array((string)($virtualRefund['status'] ?? ''), ['processing', 'completed'], true)) {
+            && \in_array((string)($virtualRefund['status'] ?? ''), ['processing', 'completed', 'waiting_ios_apple_refund'], true)) {
             return true;
         }
+        if ($this->isIosAppleVirtualTrade($tradeInfo, $snapshot)) {
+            PaymentTradeModel::mergePayloadSnapshot((int)$tradeInfo['trade_id'], [
+                'virtual_refund' => [
+                    'status' => 'waiting_ios_apple_refund',
+                    'requested_at' => time(),
+                    'order_refund_id' => (int)($context['order_refund_id'] ?? 0),
+                    'duplicate_payment' => $isDuplicatePayment,
+                    'ios_refund_required' => true,
+                    'source' => (string)($context['source'] ?? 'refund_apply'),
+                    'message' => 'iOS Apple虚拟支付订单不支持开发者主动退款，等待用户在App Store申请退款及Apple/微信退款通知收口',
+                ],
+            ]);
+            $this->logVirtualRefundObservation('ios_refund_waiting_for_app_store', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'order_no' => (string)($order['order_no'] ?? ''),
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'order_refund_id' => (int)($context['order_refund_id'] ?? 0),
+                'source' => (string)($context['source'] ?? 'refund_apply'),
+                'duplicate_payment' => $isDuplicatePayment,
+                'status' => 'waiting_ios_apple_refund',
+            ]);
+            return true;
+        }
+        // 成功虚拟支付渠道尚未确认时必须安全失败：UNKNOWN 不能被当成非 iOS 主动退款。
+        // 后台定时查单会继续补偿分类，确认后用户可重试。
+        $channelClass = (int)($tradeInfo['channel_class'] ?? ChannelClassEnum::UNKNOWN);
+        if ($channelClass === ChannelClassEnum::UNKNOWN) {
+            throwError('支付渠道尚在确认中，请稍后重试退款申请');
+        }
+
         $config = StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT, (int)$order['store_id']);
         if ((int)($config['enabled'] ?? 0) !== 1) {
             throwError('虚拟支付未开启，无法执行退款');
@@ -358,6 +479,25 @@ class Refund extends BaseService
         if (empty($tradeInfo)) {
             return ['order_refund_id' => $orderRefundId, 'status' => 'not_virtual'];
         }
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeInfo['payload_snapshot'] ?? ''));
+        if ($this->shouldWaitForIosAppleRefund($tradeInfo, $snapshot)) {
+            $this->logVirtualRefundObservation('ios_refund_sync_waiting', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_no' => (string)($order['order_no'] ?? ''),
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'order_refund_id' => $orderRefundId,
+                'status' => 'waiting_ios_apple_refund',
+                'action' => 'skip_query_order',
+            ]);
+            return [
+                'order_refund_id' => $orderRefundId,
+                'order_id' => (int)$order['order_id'],
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'status' => 'waiting_ios_apple_refund',
+                'message' => 'iOS Apple退款由App Store发起并由Apple决策，等待退款问询/退款结果通知',
+            ];
+        }
         $queryResult = $this->queryVirtualRefundState($order, $tradeInfo, $refund);
         $status = (int)($queryResult['status'] ?? -1);
         if (!$this->isVirtualRefundCompletedStatus($status)) {
@@ -380,14 +520,29 @@ class Refund extends BaseService
     }
 
     /**
+     * 退款成功码必须严格为整数 0 或字符串 "0"；其他宽松可转换值全部 fail-closed。
+     */
+    public static function isSuccessfulVirtualRefundNotify(array $notifyParams): bool
+    {
+        if (!array_key_exists('RetCode', $notifyParams)) {
+            return false;
+        }
+        $retCode = $notifyParams['RetCode'];
+        return $retCode === 0 || $retCode === '0';
+    }
+
+    /**
      * 收到退款成功通知后，按交易记录直接收口本地退款状态。
-     * 主链路优先信任已验签的退款成功事件，避免再次查单导致卡在处理中。
+     * 主链路优先信任已验签且成功码严格有效的退款事件，避免再次查单导致卡在处理中。
      * @param int $tradeId
      * @param array $notifyParams
      * @return array<string, mixed>
      */
     public function finalizeVirtualRefundByTrade(int $tradeId, array $notifyParams = []): array
     {
+        if (!self::isSuccessfulVirtualRefundNotify($notifyParams)) {
+            return ['trade_id' => $tradeId, 'status' => 'untrusted_refund_notify'];
+        }
         $tradeInfo = PaymentTradeModel::detail($tradeId);
         if (empty($tradeInfo)) {
             return ['trade_id' => $tradeId, 'status' => 'missing_trade'];
@@ -407,7 +562,21 @@ class Refund extends BaseService
         ]);
 
         if ($isDuplicatePayment) {
-            return $this->finalizeTradeOnlyVirtualRefundFromNotify($tradeInfo, $notifyParams);
+            $result = $this->finalizeTradeOnlyVirtualRefundFromNotify($tradeInfo, $notifyParams);
+            $this->logVirtualRefundObservation('refund_notify_trade_only_completed', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'status' => (string)($result['status'] ?? ''),
+                'mode' => (string)($result['mode'] ?? ''),
+                'ios_apple_trade' => $this->isIosAppleVirtualTrade($tradeInfo, $snapshot),
+            ]);
+            return $result;
+        }
+
+        // iOS Apple 最终退款由可信成功通知直接收口；商家曾建议拒绝也不能阻止资金事实落地。
+        if ($this->isIosAppleVirtualTrade($tradeInfo, $snapshot)) {
+            return $this->finalizeIosAppleRefundSuccess($tradeInfo, $snapshot, $notifyParams);
         }
 
         $order = OrderModel::detail((int)$tradeInfo['order_id'], ['goods', 'trade']);
@@ -421,13 +590,31 @@ class Refund extends BaseService
 
         $refundResolution = $this->resolveRefundForVirtualTradeNotify($tradeInfo, $snapshot);
         $refund = $refundResolution['refund'] ?? null;
+        if (empty($refund) && $this->isIosAppleVirtualTrade($tradeInfo, $snapshot)) {
+            $refundResolution = $this->ensureIosAppleRefundForSuccessfulNotify(
+                $tradeInfo,
+                $order,
+                $snapshot,
+                $notifyParams
+            );
+            $refund = $refundResolution['refund'] ?? null;
+        }
         if (empty($refund)) {
-            return [
+            $result = [
                 'trade_id' => $tradeId,
                 'order_id' => (int)$order['order_id'],
                 'status' => (string)($refundResolution['status'] ?? 'pending_refund_binding'),
                 'message' => (string)($refundResolution['message'] ?? ''),
             ];
+            $this->logVirtualRefundObservation('refund_notify_pending_binding', [
+                'trade_id' => $tradeId,
+                'order_id' => (int)$order['order_id'],
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'status' => (string)($result['status'] ?? ''),
+                'message' => (string)($result['message'] ?? ''),
+                'ios_apple_trade' => $this->isIosAppleVirtualTrade($tradeInfo, $snapshot),
+            ]);
+            return $result;
         }
 
         if (!empty($refundResolution['bound_order_refund_id'])) {
@@ -440,26 +627,35 @@ class Refund extends BaseService
         }
 
         if ((int)$refund['status'] === RefundStatusEnum::COMPLETED) {
-            PaymentTradeModel::mergePayloadSnapshot($tradeId, [
-                'virtual_refund' => [
-                    'status' => 'completed',
-                    'completed_at' => time(),
-                    'source' => 'refund_notify',
-                ],
+            // 即使退款单已完成，也重新执行幂等收敛，修复历史/乱序数据中订单或交易未同步的情况。
+            $this->finalizeVirtualRefund($order, $refund, $tradeInfo, [
+                'status' => self::VIRTUAL_ORDER_STATUS_REFUNDED,
+                'source' => 'refund_notify',
+                'notify_payload' => $notifyParams,
             ]);
-            $this->updateTradeState((int)$tradeInfo['trade_id']);
-            return [
+            $result = [
                 'trade_id' => (int)$tradeInfo['trade_id'],
                 'order_id' => (int)$order['order_id'],
                 'order_refund_id' => (int)$refund['order_refund_id'],
                 'status' => 'completed',
                 'mode' => 'already_completed',
             ];
+            $this->logVirtualRefundObservation('refund_notify_completed', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_refund_id' => (int)$refund['order_refund_id'],
+                'order_no' => (string)($order['order_no'] ?? ''),
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'status' => (string)($result['status'] ?? ''),
+                'mode' => (string)($result['mode'] ?? ''),
+                'ios_apple_trade' => $this->isIosAppleVirtualTrade($tradeInfo, $snapshot),
+            ]);
+            return $result;
         }
 
         if ((int)$refund['status'] !== RefundStatusEnum::NORMAL
             || (int)$refund['audit_status'] !== RefundAuditStatusEnum::REVIEWED) {
-            return [
+            $result = [
                 'trade_id' => (int)$tradeInfo['trade_id'],
                 'order_id' => (int)$order['order_id'],
                 'order_refund_id' => (int)$refund['order_refund_id'],
@@ -467,6 +663,17 @@ class Refund extends BaseService
                 'refund_status' => (int)$refund['status'],
                 'audit_status' => (int)$refund['audit_status'],
             ];
+            $this->logVirtualRefundObservation('refund_notify_pending_refund_ready', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_refund_id' => (int)$refund['order_refund_id'],
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'status' => (string)($result['status'] ?? ''),
+                'refund_status' => (int)($result['refund_status'] ?? -1),
+                'audit_status' => (int)($result['audit_status'] ?? -1),
+                'ios_apple_trade' => $this->isIosAppleVirtualTrade($tradeInfo, $snapshot),
+            ]);
+            return $result;
         }
 
         $this->finalizeVirtualRefund($order, $refund, $tradeInfo, [
@@ -474,13 +681,24 @@ class Refund extends BaseService
             'source' => 'refund_notify',
             'notify_payload' => $notifyParams,
         ]);
-        return [
+        $result = [
             'trade_id' => (int)$tradeInfo['trade_id'],
             'order_id' => (int)$order['order_id'],
             'order_refund_id' => (int)$refund['order_refund_id'],
             'status' => 'completed',
             'mode' => 'refund_notify',
         ];
+        $this->logVirtualRefundObservation('refund_notify_completed', [
+            'trade_id' => (int)$tradeInfo['trade_id'],
+            'order_id' => (int)$order['order_id'],
+            'order_refund_id' => (int)$refund['order_refund_id'],
+            'order_no' => (string)($order['order_no'] ?? ''),
+            'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+            'status' => (string)($result['status'] ?? ''),
+            'mode' => (string)($result['mode'] ?? ''),
+            'ios_apple_trade' => $this->isIosAppleVirtualTrade($tradeInfo, $snapshot),
+        ]);
+        return $result;
     }
 
     /**
@@ -527,14 +745,19 @@ class Refund extends BaseService
         if (empty($orderInfo)) {
             throwError('虚拟支付退款状态返回结构异常');
         }
+        $querySnapshot = [
+            'last_query_at' => time(),
+            'query_payload' => $payload,
+            // 分类器读取 virtual_refund.query_result.order_type；完整响应另行保留供审计。
+            'query_result' => $orderInfo,
+            'query_response' => $result,
+            'query_status' => (int)($orderInfo['status'] ?? -1),
+        ];
+        if (!empty($refund['order_refund_id'])) {
+            $querySnapshot['order_refund_id'] = (int)$refund['order_refund_id'];
+        }
         PaymentTradeModel::mergePayloadSnapshot((int)$tradeInfo['trade_id'], [
-            'virtual_refund' => [
-                'last_query_at' => time(),
-                'order_refund_id' => (int)($refund['order_refund_id'] ?? 0),
-                'query_payload' => $payload,
-                'query_result' => $result,
-                'query_status' => (int)($orderInfo['status'] ?? -1),
-            ],
+            'virtual_refund' => $querySnapshot,
         ]);
         return $orderInfo;
     }
@@ -549,12 +772,13 @@ class Refund extends BaseService
     private function finalizeVirtualRefund($order, $refund, PaymentTradeModel $tradeInfo, array $queryResult): void
     {
         Db::transaction(function () use ($order, $refund, $tradeInfo, $queryResult) {
-            $lockedRefund = (new OrderRefundModel)
-                ->where('order_refund_id', '=', (int)$refund['order_refund_id'])
-                ->lock(true)
-                ->find();
+            // 所有退款收敛路径统一按“订单 → 退款单 → 交易”加锁，避免并发通知与自动建档互相反向等待。
             $lockedOrder = (new OrderModel)
                 ->where('order_id', '=', (int)$order['order_id'])
+                ->lock(true)
+                ->find();
+            $lockedRefund = (new OrderRefundModel)
+                ->where('order_refund_id', '=', (int)$refund['order_refund_id'])
                 ->lock(true)
                 ->find();
             $lockedTrade = (new PaymentTradeModel)
@@ -576,10 +800,10 @@ class Refund extends BaseService
             if ((int)$lockedTrade['order_id'] !== (int)$lockedOrder['order_id']) {
                 throwError('退款收敛失败，交易记录与订单不匹配');
             }
-            if ((int)$lockedRefund['status'] === RefundStatusEnum::COMPLETED) {
-                return;
-            }
-            if ((int)$lockedRefund['status'] !== RefundStatusEnum::NORMAL || (int)$lockedRefund['audit_status'] !== RefundAuditStatusEnum::REVIEWED) {
+            $refundAlreadyCompleted = (int)$lockedRefund['status'] === RefundStatusEnum::COMPLETED;
+            if (!$refundAlreadyCompleted
+                && ((int)$lockedRefund['status'] !== RefundStatusEnum::NORMAL
+                    || (int)$lockedRefund['audit_status'] !== RefundAuditStatusEnum::REVIEWED)) {
                 return;
             }
             if ((int)$lockedOrder['order_status'] !== OrderStatusEnum::CANCELLED) {
@@ -592,15 +816,17 @@ class Refund extends BaseService
                     throwError('更新订单状态失败');
                 }
             }
-            $refundMoney = (string)$lockedRefund['refund_money'];
-            if ((float)$refundMoney <= 0) {
-                $refundMoney = OrderModel::getRefundableAmount($lockedOrder);
-            }
-            if ($lockedRefund->save([
-                'status' => RefundStatusEnum::COMPLETED,
-                'refund_money' => $refundMoney,
-            ]) === false) {
-                throwError('更新退款单状态失败');
+            if (!$refundAlreadyCompleted) {
+                $refundMoney = (string)$lockedRefund['refund_money'];
+                if ((float)$refundMoney <= 0) {
+                    $refundMoney = OrderModel::getRefundableAmount($lockedOrder);
+                }
+                if ($lockedRefund->save([
+                    'status' => RefundStatusEnum::COMPLETED,
+                    'refund_money' => $refundMoney,
+                ]) === false) {
+                    throwError('更新退款单状态失败');
+                }
             }
             if (!PaymentTradeModel::mergePayloadSnapshot((int)$lockedTrade['trade_id'], [
                 'virtual_refund' => [
@@ -617,6 +843,140 @@ class Refund extends BaseService
         });
     }
 
+
+    /**
+     * iOS Apple 退款成功的最小安全收口。
+     * 不调用通用 cancelEvent，避免本任务引入积分、优惠券或库存冲正。
+     * @return array<string, mixed>
+     */
+    private function finalizeIosAppleRefundSuccess(
+        PaymentTradeModel $tradeInfo,
+        array $snapshot,
+        array $notifyParams
+    ): array {
+        return Db::transaction(function () use ($tradeInfo, $snapshot, $notifyParams) {
+            $order = (new OrderModel)
+                ->where('order_id', '=', (int)$tradeInfo['order_id'])
+                ->lock(true)
+                ->find();
+            if (empty($order)) {
+                return [
+                    'trade_id' => (int)$tradeInfo['trade_id'],
+                    'order_id' => (int)$tradeInfo['order_id'],
+                    'status' => 'missing_order',
+                ];
+            }
+            $refunds = (new OrderRefundModel)
+                ->where('order_id', '=', (int)$order['order_id'])
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            $finalTrade = (new PaymentTradeModel)
+                ->where('trade_id', '=', (int)$order['trade_id'])
+                ->lock(true)
+                ->find();
+            if (empty($finalTrade)
+                || (int)$finalTrade['trade_id'] !== (int)$tradeInfo['trade_id']
+                || (int)$finalTrade['order_id'] !== (int)$order['order_id']
+                || (int)$finalTrade['store_id'] !== (int)$order['store_id']
+                || (int)$finalTrade['user_id'] !== (int)$order['user_id']
+                || (string)($finalTrade['platform'] ?? '') !== 'wechat_virtual') {
+                return [
+                    'trade_id' => (int)$tradeInfo['trade_id'],
+                    'order_id' => (int)$order['order_id'],
+                    'status' => 'final_trade_binding_conflict',
+                    'message' => '退款成功交易不是订单最终iOS交易，未修改订单',
+                ];
+            }
+
+            $refund = null;
+            $boundRefundId = (int)($snapshot['virtual_refund']['order_refund_id'] ?? 0);
+            if ($boundRefundId > 0) {
+                foreach ($refunds as $candidate) {
+                    if ((int)$candidate['order_refund_id'] === $boundRefundId) {
+                        $refund = $candidate;
+                        break;
+                    }
+                }
+            } elseif ($refunds->count() === 1) {
+                $refund = $refunds[0];
+            } elseif ($refunds->isEmpty()) {
+                $orderGoodsId = (int)(new OrderGoodsModel)
+                    ->where('order_id', '=', (int)$order['order_id'])
+                    ->order(['order_goods_id' => 'asc'])
+                    ->value('order_goods_id');
+                if ($orderGoodsId <= 0) {
+                    throwError('Apple退款成功通知对应的订单商品不存在');
+                }
+                $reason = trim((string)($snapshot['ios_refund_query_notify']['payload']['refund_request_reason'] ?? ''));
+                $refund = new OrderRefundModel;
+                if ($refund->save([
+                    'order_goods_id' => $orderGoodsId,
+                    'order_id' => (int)$order['order_id'],
+                    'user_id' => (int)$order['user_id'],
+                    'type' => RefundTypeEnum::SERVICE,
+                    'apply_desc' => $reason !== '' ? $reason : 'Apple / App Store 退款成功通知自动建档',
+                    'audit_status' => RefundAuditStatusEnum::REVIEWED,
+                    'status' => RefundStatusEnum::NORMAL,
+                    'refund_money' => OrderModel::getRefundableAmount($order),
+                    'store_id' => (int)$order['store_id'],
+                ]) === false) {
+                    throwError('创建Apple退款跟踪记录失败');
+                }
+            }
+
+            // 保留 delivery/receipt 历史，只关闭订单并依靠风险状态永久禁止履约。
+            if ((int)$order['order_status'] !== OrderStatusEnum::CANCELLED
+                && $order->save(['order_status' => OrderStatusEnum::CANCELLED]) === false) {
+                throwError('关闭Apple退款订单失败');
+            }
+            if (!IosRefundRiskService::markRefunded($order, IosRiskSourceEnum::REFUND_NOTIFY_RECOVERY)) {
+                throwError('更新Apple退款风险终态失败');
+            }
+            if (!empty($refund) && (int)$refund['status'] !== RefundStatusEnum::COMPLETED) {
+                if ($refund->save([
+                    'status' => RefundStatusEnum::COMPLETED,
+                    'refund_money' => (float)$refund['refund_money'] > 0
+                        ? (string)$refund['refund_money']
+                        : OrderModel::getRefundableAmount($order),
+                ]) === false) {
+                    throwError('完成Apple退款跟踪记录失败');
+                }
+            }
+
+            $currentSnapshot = PaymentTradeModel::decodePayloadSnapshot((string)($finalTrade['payload_snapshot'] ?? ''));
+            $currentSnapshot['virtual_refund'] = array_merge((array)($currentSnapshot['virtual_refund'] ?? []), [
+                'status' => 'completed',
+                'completed_at' => time(),
+                'source' => 'refund_notify',
+                'notify_payload' => $notifyParams,
+                'order_refund_id' => (int)($refund['order_refund_id'] ?? $boundRefundId),
+            ]);
+            if ($finalTrade->save([
+                'trade_state' => TradeStatusEnum::REFUND,
+                'payload_snapshot' => helper::jsonEncode($currentSnapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]) === false) {
+                throwError('完成Apple退款交易状态失败');
+            }
+
+            $mode = empty($refund) ? 'refund_binding_ambiguous' : 'ios_apple_final';
+            if (empty($refund)) {
+                $this->logVirtualRefundObservation('refund_notify_refund_binding_ambiguous', [
+                    'trade_id' => (int)$finalTrade['trade_id'],
+                    'order_id' => (int)$order['order_id'],
+                    'refund_count' => $refunds->count(),
+                ]);
+            }
+            return [
+                'trade_id' => (int)$finalTrade['trade_id'],
+                'order_id' => (int)$order['order_id'],
+                'order_refund_id' => (int)($refund['order_refund_id'] ?? 0),
+                'status' => 'completed',
+                'mode' => $mode,
+            ];
+        });
+    }
 
     /**
      * 尝试为退款成功通知解析唯一的服务退款单。
@@ -680,6 +1040,132 @@ class Refund extends BaseService
             'status' => 'ambiguous_refund_binding',
             'message' => '当前订单存在多笔可候选的服务退款单，拒绝猜测绑定',
         ];
+    }
+
+    /**
+     * Apple 退款成功通知可能先于小程序内的本地退款跟踪记录到达。
+     * 上游成功通知是资金事实；此时应在订单锁内复用唯一的进行中记录，或自动建立一条已审核记录，
+     * 避免因为本地记录缺失而永远无法把订单、退款单和交易状态收敛为已退款。
+     *
+     * @param PaymentTradeModel $tradeInfo
+     * @param mixed $order
+     * @param array $snapshot
+     * @param array $notifyParams
+     * @return array{status:string,message?:string,refund?:mixed,bound_order_refund_id?:int}
+     */
+    private function ensureIosAppleRefundForSuccessfulNotify(
+        PaymentTradeModel $tradeInfo,
+        $order,
+        array $snapshot,
+        array $notifyParams
+    ): array {
+        return Db::transaction(function () use ($tradeInfo, $order, $snapshot, $notifyParams) {
+            $lockedOrder = (new OrderModel)
+                ->where('order_id', '=', (int)$order['order_id'])
+                ->lock(true)
+                ->find();
+            if (empty($lockedOrder)) {
+                return [
+                    'status' => 'missing_order',
+                    'message' => 'Apple退款通知对应的本地订单不存在',
+                ];
+            }
+
+            $activeRefunds = (new OrderRefundModel)
+                ->where('order_id', '=', (int)$lockedOrder['order_id'])
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->where('status', '=', RefundStatusEnum::NORMAL)
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            if ($activeRefunds->count() > 1) {
+                return [
+                    'status' => 'ambiguous_refund_binding',
+                    'message' => '当前订单存在多笔进行中的服务退款单，拒绝猜测绑定',
+                ];
+            }
+
+            if ($activeRefunds->count() === 1) {
+                $refund = $activeRefunds[0];
+                if ((int)$refund['audit_status'] !== RefundAuditStatusEnum::REVIEWED) {
+                    if ($refund->save([
+                        'audit_status' => RefundAuditStatusEnum::REVIEWED,
+                        'refuse_desc' => '',
+                    ]) === false) {
+                        throwError('更新 Apple 退款跟踪记录失败');
+                    }
+                }
+                return [
+                    'status' => 'resolved',
+                    'refund' => $refund,
+                    'bound_order_refund_id' => (int)$refund['order_refund_id'],
+                ];
+            }
+
+            // 快照可能丢失绑定，但本地退款单已经完成；重复通知必须复用既有事实，不能再建一条。
+            $completedRefunds = (new OrderRefundModel)
+                ->where('order_id', '=', (int)$lockedOrder['order_id'])
+                ->where('type', '=', RefundTypeEnum::SERVICE)
+                ->where('status', '=', RefundStatusEnum::COMPLETED)
+                ->order(['order_refund_id' => 'asc'])
+                ->lock(true)
+                ->select();
+            if ($completedRefunds->count() > 1) {
+                return [
+                    'status' => 'ambiguous_completed_refund_binding',
+                    'message' => '当前订单存在多笔已完成服务退款单，拒绝猜测绑定',
+                ];
+            }
+            if ($completedRefunds->count() === 1) {
+                $refund = $completedRefunds[0];
+                return [
+                    'status' => 'resolved',
+                    'refund' => $refund,
+                    'bound_order_refund_id' => (int)$refund['order_refund_id'],
+                ];
+            }
+
+            $orderGoodsId = (int)(new OrderGoodsModel)
+                ->where('order_id', '=', (int)$lockedOrder['order_id'])
+                ->order(['order_goods_id' => 'asc'])
+                ->value('order_goods_id');
+            if ($orderGoodsId <= 0) {
+                return [
+                    'status' => 'missing_order_goods',
+                    'message' => 'Apple退款通知对应的本地订单商品不存在',
+                ];
+            }
+
+            $queryPayload = (array)($snapshot['ios_refund_query_notify']['payload'] ?? []);
+            $reason = trim((string)($queryPayload['refund_request_reason'] ?? ''));
+            $refund = new OrderRefundModel();
+            if ($refund->save([
+                'order_goods_id' => $orderGoodsId,
+                'order_id' => (int)$lockedOrder['order_id'],
+                'user_id' => (int)$lockedOrder['user_id'],
+                'type' => RefundTypeEnum::SERVICE,
+                'apply_desc' => $reason !== '' ? $reason : 'Apple / App Store 退款成功通知自动建档',
+                'audit_status' => RefundAuditStatusEnum::REVIEWED,
+                'status' => RefundStatusEnum::NORMAL,
+                'refund_money' => OrderModel::getRefundableAmount($lockedOrder),
+                'store_id' => (int)$lockedOrder['store_id'],
+            ]) === false) {
+                throwError('创建 Apple 退款跟踪记录失败');
+            }
+
+            $this->logVirtualRefundObservation('refund_notify_auto_created_refund', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$lockedOrder['order_id'],
+                'order_refund_id' => (int)$refund['order_refund_id'],
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'ret_code' => (int)($notifyParams['RetCode'] ?? -1),
+            ]);
+            return [
+                'status' => 'resolved',
+                'refund' => $refund,
+                'bound_order_refund_id' => (int)$refund['order_refund_id'],
+            ];
+        });
     }
 
     /**
@@ -757,6 +1243,24 @@ class Refund extends BaseService
                 'status' => 'missing_order',
             ];
         }
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeInfo['payload_snapshot'] ?? ''));
+        if ($this->shouldWaitForIosAppleRefund($tradeInfo, $snapshot)) {
+            $this->logVirtualRefundObservation('ios_refund_trade_only_sync_waiting', [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'order_no' => (string)($order['order_no'] ?? ''),
+                'out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                'status' => 'waiting_ios_apple_refund',
+                'action' => 'skip_query_order',
+                'mode' => 'duplicate_payment',
+            ]);
+            return [
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'status' => 'waiting_ios_apple_refund',
+                'message' => 'iOS Apple退款等待App Store与Apple结果通知，跳过主动查单',
+            ];
+        }
         $queryResult = $this->queryVirtualRefundState($order, $tradeInfo);
         $status = (int)($queryResult['status'] ?? -1);
         if (!$this->isVirtualRefundCompletedStatus($status)) {
@@ -794,6 +1298,94 @@ class Refund extends BaseService
             self::VIRTUAL_ORDER_STATUS_REFUNDED,
             self::VIRTUAL_ORDER_STATUS_USER_REFUNDED,
         ], true);
+    }
+
+    /**
+     * 当前退款是否应等待 iOS Apple / App Store 异步结果，而不是主动查单收敛。
+     * 只要本地已进入 waiting_ios_apple_refund，或者已经识别为 Apple 订单，就不再走 query_order 轮询。
+     * @param PaymentTradeModel $tradeInfo
+     * @param array $snapshot
+     * @return bool
+     */
+    private function shouldWaitForIosAppleRefund(PaymentTradeModel $tradeInfo, array $snapshot = []): bool
+    {
+        $virtualRefund = (array)($snapshot['virtual_refund'] ?? []);
+        if ((string)($virtualRefund['status'] ?? '') === 'waiting_ios_apple_refund') {
+            return true;
+        }
+        return $this->isIosAppleVirtualTrade($tradeInfo, $snapshot)
+            && !empty($virtualRefund['ios_refund_required']);
+    }
+
+    /**
+     * 是否为 iOS Apple 虚拟支付订单。
+     * 微信 query_order 中 order_type=7 表示 Apple 支付订单；若已收到 Apple 退款问询，也视为 Apple 订单。
+     * @param PaymentTradeModel $tradeInfo
+     * @param array $snapshot
+     * @return bool
+     */
+    private function isIosAppleVirtualTrade(PaymentTradeModel $tradeInfo, array $snapshot = []): bool
+    {
+        return PaymentTradeModel::isIosAppleVirtualTrade($tradeInfo, $snapshot);
+    }
+
+    /**
+     * 提取虚拟支付查单/通知快照中的 order_type 候选值。
+     * @param array $snapshot
+     * @return array<int, int>
+     */
+    private function getVirtualOrderTypeCandidates(array $snapshot): array
+    {
+        $candidates = [];
+        $paths = [
+            ['query_order', 'result', 'order', 'order_type'],
+            ['query_order', 'order', 'order_type'],
+            ['timer_query_order', 'result', 'order', 'order_type'],
+            ['timer_query_order', 'order', 'order_type'],
+            ['virtual_refund', 'query_result', 'order_type'],
+            ['virtual_refund', 'final_query', 'order_type'],
+            ['pay_notify', 'payload', 'order_type'],
+            ['pay_notify', 'payload', 'OrderType'],
+        ];
+        foreach ($paths as $path) {
+            $value = $this->getNestedArrayValue($snapshot, $path);
+            if ($value !== null && $value !== '') {
+                $candidates[] = (int)$value;
+            }
+        }
+        return $candidates;
+    }
+
+    /**
+     * 从数组中按路径取值。
+     * @param array $payload
+     * @param array<int, string> $path
+     * @return mixed|null
+     */
+    private function getNestedArrayValue(array $payload, array $path)
+    {
+        $cursor = $payload;
+        foreach ($path as $key) {
+            if (!is_array($cursor) || !array_key_exists($key, $cursor)) {
+                return null;
+            }
+            $cursor = $cursor[$key];
+        }
+        return $cursor;
+    }
+
+    /**
+     * 记录虚拟支付退款链路观测日志。
+     * 目标是把“本地申请退款 -> Apple问询 -> 微信退款通知 -> 本地收口/等待”串成可检索证据。
+     * @param string $stage
+     * @param array $context
+     * @return void
+     */
+    private function logVirtualRefundObservation(string $stage, array $context = []): void
+    {
+        Log::append('OrderRefund-virtualPaymentObservation', array_merge([
+            'stage' => $stage,
+        ], $context));
     }
 
     /**

@@ -12,6 +12,7 @@ use app\common\enum\order\DeliveryStatus as DeliveryStatusEnum;
 use app\common\enum\order\OrderStatus as OrderStatusEnum;
 use app\common\enum\order\PayStatus as PayStatusEnum;
 use app\common\enum\order\ReceiptStatus as ReceiptStatusEnum;
+use app\common\enum\order\refund\RefundStatus as RefundStatusEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
 use app\common\library\wechat\VirtualPayment as WechatVirtualPayment;
@@ -45,8 +46,11 @@ class VirtualPaymentSandboxCheck extends Command
             ->addOption('expect-duplicate-notify', null, Option::VALUE_NONE, 'Require duplicate notify evidence on the audited trade')
             ->addOption('expect-query-evidence', null, Option::VALUE_NONE, 'Require active query evidence on the audited trade')
             ->addOption('expect-no-duplicate-refund', null, Option::VALUE_NONE, 'Require no duplicate refund records for the audited order')
+            ->addOption('expect-ios-refund-query', null, Option::VALUE_NONE, 'Require authenticated Apple refund inquiry evidence on the audited trade')
+            ->addOption('expect-refunded', null, Option::VALUE_NONE, 'Require refund notify and four-layer local refund convergence')
             ->addOption('expect-provide-goods-idempotent', null, Option::VALUE_NONE, 'Require provide-goods dispatch evidence to be terminal or retry-safe')
-            ->addOption('probe-remote-query', null, Option::VALUE_NONE, 'Call WeChat xpay/query_order for the audited trade and store the raw response in evidence')
+            ->addOption('probe-remote-query', null, Option::VALUE_NONE, 'Call WeChat xpay/query_order for the audited trade and store a sanitized response in evidence')
+            ->addOption('probe-notify-endpoint', null, Option::VALUE_NONE, 'Send a signed URL-verification GET to the configured virtual-payment callback')
             ->addOption('evidence-dir', null, Option::VALUE_OPTIONAL, 'Evidence output directory', self::DEFAULT_EVIDENCE_DIR)
             ->addOption('require-safe-mode', null, Option::VALUE_NONE, 'Require message_push_encoding_aes_key')
             ->setDescription('Check WeChat virtual-payment sandbox readiness without mutating business data');
@@ -65,8 +69,11 @@ class VirtualPaymentSandboxCheck extends Command
             'duplicate_notify' => (bool)$input->getOption('expect-duplicate-notify'),
             'query_evidence' => (bool)$input->getOption('expect-query-evidence'),
             'no_duplicate_refund' => (bool)$input->getOption('expect-no-duplicate-refund'),
+            'ios_refund_query' => (bool)$input->getOption('expect-ios-refund-query'),
+            'refunded' => (bool)$input->getOption('expect-refunded'),
             'provide_goods_idempotent' => (bool)$input->getOption('expect-provide-goods-idempotent'),
             'probe_remote_query' => (bool)$input->getOption('probe-remote-query'),
+            'probe_notify_endpoint' => (bool)$input->getOption('probe-notify-endpoint'),
         ];
         $evidenceDir = rtrim((string)$input->getOption('evidence-dir'), '/');
 
@@ -86,11 +93,14 @@ class VirtualPaymentSandboxCheck extends Command
             ],
         ];
 
-        $this->checkRuntimeConfig($report, $storeId, $requireSafeMode);
+        $this->checkRuntimeConfig($report, $storeId, $requireSafeMode, $outTradeNo !== '');
         $this->checkWxappConfig($report, $storeId);
         $selectedGoodsId = $this->checkGoodsMapping($report, $storeId, $goodsId);
         $this->checkTestUser($report, $storeId, $userMobile);
         $this->checkNotifyEndpoint($report);
+        if (!empty($expectations['probe_notify_endpoint'])) {
+            $this->probeNotifyEndpoint($report, $storeId);
+        }
         $this->checkRecentVirtualTrades($report, $storeId, $selectedGoodsId);
         if ($outTradeNo !== '') {
             $this->checkTradeEvidence($report, $storeId, $selectedGoodsId, $outTradeNo, $expectations);
@@ -109,7 +119,7 @@ class VirtualPaymentSandboxCheck extends Command
         return $report['summary']['ready'] ? 0 : 1;
     }
 
-    private function checkRuntimeConfig(array &$report, int $storeId, bool $requireSafeMode): void
+    private function checkRuntimeConfig(array &$report, int $storeId, bool $requireSafeMode, bool $auditRealTrade): void
     {
         $config = StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT, $storeId);
         $masked = $config;
@@ -120,10 +130,20 @@ class VirtualPaymentSandboxCheck extends Command
         }
         $report['virtual_payment_config'] = $masked;
 
+        $configuredEnv = (int)($config['env'] ?? -1);
+        $expectedAppKey = $configuredEnv === GoodsModel::VP_ENV_SANDBOX ? 'sandbox_app_key' : 'production_app_key';
         $this->addCheck($report, 'virtual_payment.enabled', (int)($config['enabled'] ?? 0) === 1, 'failure', 'virtual payment must be enabled');
-        $this->addCheck($report, 'virtual_payment.env', (int)($config['env'] ?? -1) === GoodsModel::VP_ENV_SANDBOX, 'failure', 'sandbox acceptance must use env=1');
+        $this->addCheck(
+            $report,
+            'virtual_payment.env',
+            $auditRealTrade
+                ? \in_array($configuredEnv, [GoodsModel::VP_ENV_PRODUCTION, GoodsModel::VP_ENV_SANDBOX], true)
+                : $configuredEnv === GoodsModel::VP_ENV_SANDBOX,
+            'failure',
+            $auditRealTrade ? 'real-trade audit accepts configured env=0 or env=1' : 'sandbox acceptance must use env=1'
+        );
         $this->addRequiredStringCheck($report, $config, 'offer_id', 'virtual_payment.offer_id');
-        $this->addRequiredStringCheck($report, $config, 'sandbox_app_key', 'virtual_payment.sandbox_app_key');
+        $this->addRequiredStringCheck($report, $config, $expectedAppKey, 'virtual_payment.' . $expectedAppKey);
         $this->addRequiredStringCheck($report, $config, 'merchant_id', 'virtual_payment.merchant_id');
         $this->addRequiredStringCheck($report, $config, 'notify_base_url', 'virtual_payment.notify_base_url');
         $this->addRequiredStringCheck($report, $config, 'message_push_token', 'virtual_payment.message_push_token');
@@ -251,10 +271,74 @@ class VirtualPaymentSandboxCheck extends Command
     private function checkNotifyEndpoint(array &$report): void
     {
         $noticeFile = public_path() . 'notice/virtualPayment.php';
+        $legacyNoticeFile = public_path() . 'notice/wechatVirtual.php';
         $routeFile = root_path() . 'route/app.php';
         $routeText = is_file($routeFile) ? (string)file_get_contents($routeFile) : '';
+        $autoloadExpression = "dirname(__DIR__, 2) . '/vendor/autoload.php'";
+        $noticeText = is_file($noticeFile) ? (string)file_get_contents($noticeFile) : '';
+        $legacyNoticeText = is_file($legacyNoticeFile) ? (string)file_get_contents($legacyNoticeFile) : '';
         $this->addCheck($report, 'notify.entry_file', is_file($noticeFile), 'failure', 'public notice entry must exist');
+        $this->addCheck($report, 'notify.entry_autoload', str_contains($noticeText, $autoloadExpression), 'failure', 'public notice entry must load project-root vendor/autoload.php');
+        $this->addCheck($report, 'notify.legacy_entry_autoload', str_contains($legacyNoticeText, $autoloadExpression), 'failure', 'legacy public notice entry must load project-root vendor/autoload.php');
         $this->addCheck($report, 'notify.route', str_contains($routeText, 'notify/virtualPayment'), 'failure', 'notify route must be registered');
+    }
+
+    /**
+     * 使用消息推送 token 对公网回调入口执行一次签名 GET 验证，不发送业务通知。
+     */
+    private function probeNotifyEndpoint(array &$report, int $storeId): void
+    {
+        $config = StoreSettingModel::getItem(SettingEnum::VIRTUAL_PAYMENT, $storeId);
+        $baseUrl = rtrim(trim((string)($config['notify_base_url'] ?? '')), '/');
+        $token = trim((string)($config['message_push_token'] ?? ''));
+        $endpoint = $baseUrl . '/notice/virtualPayment.php';
+        $report['notify_endpoint_probe'] = [
+            'endpoint' => $endpoint,
+            'probed_at' => date('c'),
+        ];
+        if ($baseUrl === '' || $token === '') {
+            $this->addCheck($report, 'notify.endpoint_probe', false, 'failure', 'notify_base_url and message_push_token are required for endpoint probe');
+            return;
+        }
+
+        $timestamp = (string)time();
+        $nonce = bin2hex(random_bytes(8));
+        $echo = 'virtual-payment-probe-' . bin2hex(random_bytes(8));
+        $parts = [$token, $timestamp, $nonce];
+        sort($parts, SORT_STRING);
+        $query = http_build_query([
+            'signature' => sha1(implode($parts)),
+            'timestamp' => $timestamp,
+            'nonce' => $nonce,
+            'echostr' => $echo,
+        ]);
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 10,
+                'ignore_errors' => true,
+                'header' => "User-Agent: YoShop-VirtualPayment-Readiness/1.0\r\n",
+            ],
+        ]);
+        $startedAt = microtime(true);
+        $body = @file_get_contents($endpoint . '?' . $query, false, $context);
+        $elapsedMs = round((microtime(true) - $startedAt) * 1000, 2);
+        $headers = $http_response_header ?? [];
+        $httpStatus = 0;
+        if (isset($headers[0]) && preg_match('/\s(\d{3})\s/', $headers[0], $matches)) {
+            $httpStatus = (int)$matches[1];
+        }
+        $responseMatchesEcho = is_string($body) && hash_equals($echo, trim($body));
+        $report['notify_endpoint_probe']['http_status'] = $httpStatus;
+        $report['notify_endpoint_probe']['elapsed_ms'] = $elapsedMs;
+        $report['notify_endpoint_probe']['response_matches_echo'] = $responseMatchesEcho;
+        $this->addCheck(
+            $report,
+            'notify.endpoint_probe',
+            $httpStatus === 200 && $responseMatchesEcho,
+            'failure',
+            'configured callback must return HTTP 200 with the signed URL-verification echo'
+        );
     }
 
     private function checkRecentVirtualTrades(array &$report, int $storeId, int $goodsId): void
@@ -341,6 +425,13 @@ class VirtualPaymentSandboxCheck extends Command
 
         $this->addCheck($report, 'trade.store', (int)$tradeData['store_id'] === $storeId, 'failure', 'trade must belong to selected store');
         $this->addCheck($report, 'trade.platform', (string)$tradeData['platform'] === 'wechat_virtual', 'failure', 'trade must be wechat_virtual');
+        $this->addCheck(
+            $report,
+            'trade.env',
+            (int)$tradeData['env'] === (int)($report['virtual_payment_config']['env'] ?? -1),
+            'failure',
+            'audited trade env must match the currently configured virtual-payment env'
+        );
         if ($goodsId > 0) {
             $goods = Db::name('goods')->where('goods_id', '=', $goodsId)->find();
             if (!empty($goods['vp_product_id'])) {
@@ -368,13 +459,52 @@ class VirtualPaymentSandboxCheck extends Command
                 ?? $snapshot['query_order']['result']['order']['status']
                 ?? -1);
             $this->addCheck($report, 'query.snapshot', isset($snapshot['query_order']), 'failure', 'query_order snapshot must exist');
-            $this->addCheck($report, 'query.paid_status', $queryStatus === 2, 'failure', 'query_order status must indicate paid');
+            $this->addCheck($report, 'query.paid_status', in_array($queryStatus, [2, 3], true), 'failure', 'query_order status must indicate paid or paid-pending-delivery');
         }
         if (!empty($expectations['probe_remote_query'])) {
             $this->probeRemoteQueryOrder($report, $storeId, $tradeData);
         }
         if (!empty($expectations['no_duplicate_refund'])) {
             $this->addCheck($report, 'refund.not_duplicated', (int)$refundCount <= 1, 'failure', 'audited order must not have duplicate refund records');
+        }
+        if (!empty($expectations['ios_refund_query'])) {
+            $queryNotify = (array)($snapshot['ios_refund_query_notify'] ?? []);
+            $queryPayload = (array)($queryNotify['payload'] ?? []);
+            $queryDecision = (string)($snapshot['virtual_refund']['ios_refund_query_decision'] ?? '');
+            $this->addCheck(
+                $report,
+                'refund.ios_query_notify',
+                (string)($queryNotify['event'] ?? '') === 'xpay_subscribe_ios_refund_query_notify'
+                    && (int)($queryNotify['received_at'] ?? 0) > 0
+                    && !empty($queryPayload),
+                'failure',
+                'authenticated Apple refund inquiry snapshot must exist'
+            );
+            $this->addCheck(
+                $report,
+                'refund.ios_query_decision',
+                $queryDecision === 'suggest_refund',
+                'failure',
+                'Apple refund inquiry decision must be persisted as suggest_refund'
+            );
+        }
+        if (!empty($expectations['refunded'])) {
+            $refundNotify = (array)($snapshot['refund_notify'] ?? []);
+            $virtualRefundStatus = (string)($snapshot['virtual_refund']['status'] ?? '');
+            $this->addCheck(
+                $report,
+                'refund.success_notify',
+                (string)($refundNotify['event'] ?? '') === 'xpay_refund_notify'
+                    && (int)($refundNotify['received_at'] ?? 0) > 0
+                    && (int)($refundNotify['payload']['RetCode'] ?? -1) === 0,
+                'failure',
+                'successful xpay_refund_notify snapshot must exist'
+            );
+            $this->addCheck($report, 'refund.single_row', (int)$refundCount === 1, 'failure', 'refunded order must have exactly one refund row');
+            $this->addCheck($report, 'refund.row_completed', !empty($refund) && (int)$refund['status'] === RefundStatusEnum::COMPLETED, 'failure', 'order_refund status must be COMPLETED');
+            $this->addCheck($report, 'refund.order_cancelled', !empty($order) && (int)$order['order_status'] === OrderStatusEnum::CANCELLED, 'failure', 'order status must be CANCELLED');
+            $this->addCheck($report, 'refund.trade_refunded', (int)$tradeData['trade_state'] === TradeStatusEnum::REFUND, 'failure', 'payment_trade state must be REFUND');
+            $this->addCheck($report, 'refund.snapshot_completed', $virtualRefundStatus === 'completed', 'failure', 'virtual_refund snapshot status must be completed');
         }
         if (!empty($expectations['provide_goods_idempotent'])) {
             $provideGoodsStatus = (string)($snapshot['provide_goods']['status'] ?? '');
@@ -442,7 +572,7 @@ class VirtualPaymentSandboxCheck extends Command
         try {
             $payment = new WechatVirtualPayment($appId, $appSecret, $appKey);
             $result = $payment->queryOrder($payload);
-            $report['remote_query_probe']['result'] = $result;
+            $report['remote_query_probe']['result'] = $this->sanitizeEvidencePayload($result);
             $errCode = (int)($result['errcode'] ?? -1);
             $status = (int)($result['order']['status'] ?? -1);
             $report['remote_query_probe']['interpretation'] = $this->interpretRemoteQueryProbe($result);
@@ -470,10 +600,12 @@ class VirtualPaymentSandboxCheck extends Command
         $errMsg = (string)($result['errmsg'] ?? '');
         $status = (int)($result['order']['status'] ?? -1);
         if ($errCode === 0) {
-            if ($status === 2) {
+            if (in_array($status, [2, 3], true)) {
                 return [
                     'phase' => 'remote_paid',
-                    'message' => 'WeChat remote order exists and is paid',
+                    'message' => $status === 3
+                        ? 'WeChat remote order exists and is paid; status=3 means paid and waiting for downstream delivery/consumption'
+                        : 'WeChat remote order exists and is paid',
                 ];
             }
             if ($status === 6) {
@@ -503,6 +635,28 @@ class VirtualPaymentSandboxCheck extends Command
             'phase' => 'remote_query_error',
             'message' => sprintf('WeChat remote query returned errcode=%d errmsg=%s', $errCode, $errMsg),
         ];
+    }
+
+    /**
+     * Recursively redact credentials and signing material before writing evidence files.
+     * Upstream query responses may contain an order token even when the request payload is already masked.
+     * @param mixed $value
+     * @param string $key
+     * @return mixed
+     */
+    private function sanitizeEvidencePayload($value, string $key = '')
+    {
+        if ($key !== '' && preg_match('/(?:token|secret|signature|app_key|session_key|aes_key)/i', $key)) {
+            return $value === null || $value === '' ? $value : '***' . strlen((string)$value);
+        }
+        if (!is_array($value)) {
+            return $value;
+        }
+        $sanitized = [];
+        foreach ($value as $childKey => $childValue) {
+            $sanitized[$childKey] = $this->sanitizeEvidencePayload($childValue, (string)$childKey);
+        }
+        return $sanitized;
     }
 
     private function addCheck(array &$report, string $name, bool $ok, string $severity, string $message): void

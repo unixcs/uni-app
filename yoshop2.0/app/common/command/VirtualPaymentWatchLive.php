@@ -507,10 +507,12 @@ class VirtualPaymentWatchLive extends Command
         $errMsg = (string)($result['errmsg'] ?? '');
         $status = (int)($result['order']['status'] ?? -1);
         if ($errCode === 0) {
-            if ($status === 2) {
+            if (in_array($status, [2, 3], true)) {
                 return [
                     'phase' => 'remote_paid',
-                    'message' => 'WeChat remote order exists and is paid',
+                    'message' => $status === 3
+                        ? 'WeChat remote order exists and is paid; status=3 means paid and waiting for downstream delivery/consumption'
+                        : 'WeChat remote order exists and is paid',
                 ];
             }
             if ($status === 6) {

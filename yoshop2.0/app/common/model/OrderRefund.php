@@ -30,6 +30,27 @@ class OrderRefund extends BaseModel
     // 定义主键
     protected $pk = 'order_refund_id';
 
+    /** @var array{key:string,projection:array}|null 同一模型序列化期间复用状态投影，避免每个 append accessor 重复查交易 */
+    private ?array $serviceProjectionCache = null;
+
+    /**
+     * 获取当前原始属性对应的服务退款投影。
+     * 子类提供 buildServiceProjection()；缓存键随状态字段变化而变化，不会复用旧状态。
+     * @param array $data
+     * @return array
+     */
+    protected function getServiceProjectionForAttr(array $data): array
+    {
+        $key = serialize($data);
+        if ($this->serviceProjectionCache === null || $this->serviceProjectionCache['key'] !== $key) {
+            $this->serviceProjectionCache = [
+                'key' => $key,
+                'projection' => static::buildServiceProjection($data),
+            ];
+        }
+        return $this->serviceProjectionCache['projection'];
+    }
+
     /**
      * 关联用户表
      * @return BelongsTo

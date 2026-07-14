@@ -27,6 +27,8 @@ use app\common\enum\Client as ClientEnum;
 use app\common\enum\OrderType as OrderTypeEnum;
 use app\common\enum\order\PayStatus as PayStatusEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
+use app\common\enum\payment\trade\ChannelClass as ChannelClassEnum;
+use app\common\enum\payment\trade\TradeStatus as TradeStatusEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\model\Goods as CommonGoodsModel;
 use app\common\model\UserOauth as UserOauthModel;
@@ -52,6 +54,9 @@ class Payment extends BaseService
     private const VIRTUAL_ORDER_STATUS_PAID = 2;
     private const VIRTUAL_ORDER_STATUS_PAID_PENDING_DELIVERY = 3;
     private const VIRTUAL_ORDER_STATUS_CLOSED = 6;
+    private const VIRTUAL_PAYMENT_STATE_CREATED = 'created';
+    private const VIRTUAL_PAYMENT_STATE_CONFIRMING = 'confirming';
+    private const VIRTUAL_PAYMENT_STATE_PAID = 'paid';
 
     // 提示信息
     private string $message = '';
@@ -156,32 +161,112 @@ class Payment extends BaseService
             'client_runtime' => $this->sanitizeClientRuntimeContext($extra['runtimeContext'] ?? null),
         ]);
         try {
-            // 订单支付事件
-            $this->orderPayEvent();
-            // 构建第三方支付请求的参数
-            $payment = $this->unifiedorder($extra);
-            $this->traceVirtualPaymentAttempt('unifiedorder_result', [
-                'provider' => (string)($payment['provider'] ?? ''),
-                'platform' => (string)($payment['platform'] ?? ''),
-                'out_trade_no' => (string)($payment['out_trade_no'] ?? ''),
-                'env' => isset($payment['env']) ? (int)$payment['env'] : null,
-                'product_id' => (string)($payment['product_id'] ?? ''),
-            ]);
-            // 记录第三方交易信息
-            $this->recordPaymentTrade($payment);
-            $this->traceVirtualPaymentAttempt('trade_recorded', [
-                'provider' => (string)($payment['provider'] ?? ''),
-                'platform' => (string)($payment['platform'] ?? ''),
-                'out_trade_no' => (string)($payment['out_trade_no'] ?? ''),
-            ]);
-            // 返回结果
-            return compact('payment');
+            // 虚拟支付的“查旧尝试 -> 微信下单 -> 本地落交易”必须按订单串行化。
+            // 使用 MySQL advisory lock，避免在远程微信请求期间持有数据库事务。
+            if ($this->requiresVirtualPayment()) {
+                return $this->orderPayWithVirtualCreateLock($extra);
+            }
+            return $this->executeOrderPay($extra, false);
         } catch (\Throwable $e) {
             $this->traceVirtualPaymentAttempt('order_pay_exception', [
                 'exception_class' => get_class($e),
                 'message' => $e->getMessage(),
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * 执行一次支付创建/复用决策。
+     * @param array $extra
+     * @param bool $requiresVirtualPayment
+     * @return array
+     */
+    private function executeOrderPay(array $extra, bool $requiresVirtualPayment): array
+    {
+        // 订单支付事件
+        $this->orderPayEvent();
+        // 虚拟支付创建新交易前，必须先确认同一订单最近一次尝试的结果
+        $payment = $requiresVirtualPayment
+            ? $this->resolveExistingVirtualPaymentAttempt($extra)
+            : null;
+        // 没有需要继续收口的旧交易时，才构建新的第三方支付请求
+        $payment = $payment ?: $this->unifiedorder($extra);
+        $this->traceVirtualPaymentAttempt('unifiedorder_result', [
+            'provider' => (string)($payment['provider'] ?? ''),
+            'platform' => (string)($payment['platform'] ?? ''),
+            'out_trade_no' => (string)($payment['out_trade_no'] ?? ''),
+            'env' => isset($payment['env']) ? (int)$payment['env'] : null,
+            'product_id' => (string)($payment['product_id'] ?? ''),
+        ]);
+        // 只有新创建的支付参数才写入交易记录；paid/confirming 复用的是旧交易
+        $paymentState = (string)($payment['state'] ?? self::VIRTUAL_PAYMENT_STATE_CREATED);
+        if ($paymentState === self::VIRTUAL_PAYMENT_STATE_CREATED) {
+            $this->recordPaymentTrade($payment);
+            $this->traceVirtualPaymentAttempt('trade_recorded', [
+                'provider' => (string)($payment['provider'] ?? ''),
+                'platform' => (string)($payment['platform'] ?? ''),
+                'out_trade_no' => (string)($payment['out_trade_no'] ?? ''),
+            ]);
+        } else {
+            $this->traceVirtualPaymentAttempt('repeat_guard_reused_trade', [
+                'state' => $paymentState,
+                'out_trade_no' => (string)($payment['out_trade_no'] ?? ''),
+            ]);
+        }
+        return compact('payment');
+    }
+
+    /**
+     * 使用订单级 MySQL advisory lock 串行化虚拟支付创建。
+     * 锁获取失败时按结果未知处理，绝不继续创建第二笔交易。
+     * @param array $extra
+     * @return array
+     */
+    private function orderPayWithVirtualCreateLock(array $extra): array
+    {
+        $orderId = (int)($this->orderInfo['order_id'] ?? 0);
+        $lockName = sprintf('vp:create:%d:%d', $this->getStoreId(), $orderId);
+        $connection = Db::connect();
+        $acquired = false;
+        try {
+            $rows = $connection->query(
+                'SELECT GET_LOCK(:lock_name, :lock_timeout) AS acquired',
+                ['lock_name' => $lockName, 'lock_timeout' => 5],
+                true
+            );
+            $acquired = (int)($rows[0]['acquired'] ?? 0) === 1;
+            if (!$acquired) {
+                $tradeInfo = $this->getLatestVirtualTradeSnapshotByOrderId($orderId);
+                $this->traceVirtualPaymentAttempt('repeat_guard_lock_unavailable', [
+                    'existing_trade_id' => (int)($tradeInfo['trade_id'] ?? 0),
+                    'existing_out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+                ]);
+                $payment = $this->buildVirtualPaymentStateResponse(
+                    self::VIRTUAL_PAYMENT_STATE_CONFIRMING,
+                    $tradeInfo,
+                    '支付请求正在处理中，请稍后返回本页确认，切勿重复付款'
+                );
+                return compact('payment');
+            }
+
+            $this->traceVirtualPaymentAttempt('repeat_guard_lock_acquired');
+            // 等锁期间订单/交易状态可能变化，进入临界区后必须重新读取并重新校验。
+            $this->orderInfo = OrderModel::getDetail($orderId);
+            $this->resolvedOrderGoods = null;
+            return $this->executeOrderPay($extra, true);
+        } finally {
+            if ($acquired) {
+                try {
+                    $connection->query('SELECT RELEASE_LOCK(:lock_name) AS released', ['lock_name' => $lockName], true);
+                    $this->traceVirtualPaymentAttempt('repeat_guard_lock_released');
+                } catch (\Throwable $releaseError) {
+                    $this->traceVirtualPaymentAttempt('repeat_guard_lock_release_error', [
+                        'exception_class' => get_class($releaseError),
+                        'message' => $releaseError->getMessage(),
+                    ]);
+                }
+            }
         }
     }
 
@@ -409,6 +494,7 @@ class Payment extends BaseService
         return [
             'provider' => 'virtual',
             'platform' => 'wechat_virtual',
+            'state' => self::VIRTUAL_PAYMENT_STATE_CREATED,
             'method' => $this->method,
             'mode' => 'short_series_goods',
             'out_trade_no' => $outTradeNo,
@@ -762,6 +848,7 @@ class Payment extends BaseService
         }
         $trade = Db::name('payment_trade')
             ->where('order_id', '=', $orderId)
+            ->where('store_id', '=', $this->getStoreId())
             ->where('platform', '=', 'wechat_virtual')
             ->where('product_id', '<>', '')
             ->where('goods_price', '>', 0)
@@ -801,6 +888,222 @@ class Payment extends BaseService
     }
 
     /**
+     * 创建新虚拟支付尝试前，先收口同一订单最近一次交易。
+     * 返回 null 才表示旧交易已明确终态未支付，可以创建新 out_trade_no。
+     * @return array|null
+     */
+    private function resolveExistingVirtualPaymentAttempt(array $extra = []): ?array
+    {
+        $orderId = (int)($this->orderInfo['order_id'] ?? 0);
+        $tradeInfo = $this->getLatestVirtualTradeSnapshotByOrderId($orderId);
+        $this->traceVirtualPaymentAttempt('repeat_guard_entry', [
+            'existing_trade_id' => (int)($tradeInfo['trade_id'] ?? 0),
+            'existing_out_trade_no' => (string)($tradeInfo['out_trade_no'] ?? ''),
+            'existing_trade_state' => isset($tradeInfo['trade_state']) ? (int)$tradeInfo['trade_state'] : null,
+        ]);
+        if (empty($tradeInfo)) {
+            $this->traceVirtualPaymentAttempt('repeat_guard_no_existing_trade');
+            return null;
+        }
+        if ((int)($tradeInfo['user_id'] ?? 0) !== (int)($this->orderInfo['user_id'] ?? 0)) {
+            throwError('支付交易用户与当前订单不一致');
+        }
+        $outTradeNo = (string)($tradeInfo['out_trade_no'] ?? '');
+        if ($outTradeNo === '') {
+            $this->traceVirtualPaymentAttempt('repeat_guard_query_error', [
+                'reason' => 'missing_out_trade_no',
+                'existing_trade_id' => (int)($tradeInfo['trade_id'] ?? 0),
+            ]);
+            return $this->buildVirtualPaymentStateResponse(
+                self::VIRTUAL_PAYMENT_STATE_CONFIRMING,
+                $tradeInfo,
+                '上一笔支付结果暂时无法确认，请稍后重试'
+            );
+        }
+
+        $previousCancelledOutTradeNo = trim((string)($extra['previousCancelledOutTradeNo'] ?? ''));
+        $isExplicitlyCancelled = $previousCancelledOutTradeNo !== '' && hash_equals($outTradeNo, $previousCancelledOutTradeNo);
+        $tradeState = (int)($tradeInfo['trade_state'] ?? TradeStatusEnum::UNPAID);
+        if ($tradeState === TradeStatusEnum::SUCCESS) {
+            $this->convergeExistingSuccessfulTrade($tradeInfo);
+            $this->traceVirtualPaymentAttempt('repeat_guard_existing_paid', [
+                'existing_trade_id' => (int)$tradeInfo['trade_id'],
+                'existing_out_trade_no' => $outTradeNo,
+                'source' => 'local_trade_state',
+            ]);
+            return $this->buildVirtualPaymentStateResponse(
+                self::VIRTUAL_PAYMENT_STATE_PAID,
+                $tradeInfo,
+                '恭喜您，订单已付款成功'
+            );
+        }
+        if ($tradeState === TradeStatusEnum::REFUND) {
+            $this->traceVirtualPaymentAttempt('repeat_guard_existing_confirming', [
+                'existing_trade_id' => (int)$tradeInfo['trade_id'],
+                'existing_out_trade_no' => $outTradeNo,
+                'reason' => 'refunded_trade',
+            ]);
+            return $this->buildVirtualPaymentStateResponse(
+                self::VIRTUAL_PAYMENT_STATE_CONFIRMING,
+                $tradeInfo,
+                '该订单已有完成后退款的支付记录，请勿重复支付'
+            );
+        }
+        if ($tradeState === TradeStatusEnum::CLOSED) {
+            $this->traceVirtualPaymentAttempt('repeat_guard_existing_closed', [
+                'existing_trade_id' => (int)$tradeInfo['trade_id'],
+                'existing_out_trade_no' => $outTradeNo,
+                'source' => 'local_trade_state',
+            ]);
+            return null;
+        }
+
+        try {
+            if ($this->virtualTradeQuery($outTradeNo)) {
+                $latestTrade = PaymentTradeModel::detailByOutTradeNo($outTradeNo);
+                $latestTrade = \is_object($latestTrade) && method_exists($latestTrade, 'toArray')
+                    ? $latestTrade->toArray()
+                    : (array)$latestTrade;
+                $this->traceVirtualPaymentAttempt('repeat_guard_existing_paid', [
+                    'existing_trade_id' => (int)($latestTrade['trade_id'] ?? 0),
+                    'existing_out_trade_no' => $outTradeNo,
+                    'source' => 'remote_query',
+                ]);
+                return $this->buildVirtualPaymentStateResponse(
+                    self::VIRTUAL_PAYMENT_STATE_PAID,
+                    $latestTrade,
+                    '恭喜您，订单已付款成功'
+                );
+            }
+            $latestTrade = PaymentTradeModel::detailByOutTradeNo($outTradeNo);
+            $latestTrade = \is_object($latestTrade) && method_exists($latestTrade, 'toArray')
+                ? $latestTrade->toArray()
+                : (array)$latestTrade;
+            $remoteStatus = $this->getLatestVirtualQueryStatus($latestTrade);
+            if ($isExplicitlyCancelled && \in_array($remoteStatus, [
+                self::VIRTUAL_ORDER_STATUS_CREATED,
+                self::VIRTUAL_ORDER_STATUS_PAYING,
+            ], true)) {
+                PaymentTradeModel::updateBase([
+                    'trade_state' => TradeStatusEnum::CLOSED,
+                ], (int)$latestTrade['trade_id']);
+                $this->traceVirtualPaymentAttempt('repeat_guard_existing_closed', [
+                    'existing_trade_id' => (int)$latestTrade['trade_id'],
+                    'existing_out_trade_no' => $outTradeNo,
+                    'source' => 'explicit_client_cancel',
+                    'remote_status' => $remoteStatus,
+                ]);
+                return null;
+            }
+            if ($remoteStatus === self::VIRTUAL_ORDER_STATUS_CLOSED) {
+                PaymentTradeModel::updateBase([
+                    'trade_state' => TradeStatusEnum::CLOSED,
+                ], (int)$latestTrade['trade_id']);
+                $this->traceVirtualPaymentAttempt('repeat_guard_existing_closed', [
+                    'existing_trade_id' => (int)$latestTrade['trade_id'],
+                    'existing_out_trade_no' => $outTradeNo,
+                    'source' => 'remote_query',
+                    'remote_status' => $remoteStatus,
+                ]);
+                return null;
+            }
+            $this->traceVirtualPaymentAttempt('repeat_guard_existing_confirming', [
+                'existing_trade_id' => (int)($latestTrade['trade_id'] ?? 0),
+                'existing_out_trade_no' => $outTradeNo,
+                'remote_status' => $remoteStatus,
+                'pending' => $this->pendingTradeQuery,
+            ]);
+            return $this->buildVirtualPaymentStateResponse(
+                self::VIRTUAL_PAYMENT_STATE_CONFIRMING,
+                $latestTrade,
+                $this->getError() ?: '上一笔支付结果仍在确认中，请勿重复支付'
+            );
+        } catch (\Throwable $e) {
+            if ($isExplicitlyCancelled && str_contains($e->getMessage(), '尚未创建这笔虚拟支付订单')) {
+                PaymentTradeModel::updateBase([
+                    'trade_state' => TradeStatusEnum::CLOSED,
+                ], (int)$tradeInfo['trade_id']);
+                $this->traceVirtualPaymentAttempt('repeat_guard_existing_closed', [
+                    'existing_trade_id' => (int)$tradeInfo['trade_id'],
+                    'existing_out_trade_no' => $outTradeNo,
+                    'source' => 'explicit_client_cancel_not_created',
+                ]);
+                return null;
+            }
+            $this->traceVirtualPaymentAttempt('repeat_guard_query_error', [
+                'existing_trade_id' => (int)($tradeInfo['trade_id'] ?? 0),
+                'existing_out_trade_no' => $outTradeNo,
+                'exception_class' => get_class($e),
+                'message' => $e->getMessage(),
+            ]);
+            return $this->buildVirtualPaymentStateResponse(
+                self::VIRTUAL_PAYMENT_STATE_CONFIRMING,
+                $tradeInfo,
+                '上一笔支付结果暂时无法确认，请稍后重试，切勿重复付款'
+            );
+        }
+    }
+
+    /**
+     * 将已有成功交易幂等收口到订单主状态。
+     * @param array $tradeInfo
+     */
+    private function convergeExistingSuccessfulTrade(array $tradeInfo): void
+    {
+        $latestOrder = OrderModel::getDetail((int)$tradeInfo['order_id']);
+        if (!empty($latestOrder) && (int)($latestOrder['pay_status'] ?? 0) === PayStatusEnum::SUCCESS) {
+            $this->message = '恭喜您，订单已付款成功';
+            return;
+        }
+        $this->orderPaySuccess(
+            (string)$tradeInfo['order_no'],
+            (int)$tradeInfo['trade_id'],
+            [
+                'tradeNo' => (string)($tradeInfo['trade_no'] ?? $tradeInfo['out_trade_no'] ?? ''),
+                'outTradeNo' => (string)($tradeInfo['out_trade_no'] ?? ''),
+            ]
+        );
+    }
+
+    /**
+     * 从最近一次主动/定时查单快照读取微信订单状态。
+     * @param array $tradeInfo
+     * @return int|null
+     */
+    private function getLatestVirtualQueryStatus(array $tradeInfo): ?int
+    {
+        $snapshot = PaymentTradeModel::decodePayloadSnapshot((string)($tradeInfo['payload_snapshot'] ?? ''));
+        $queryOrder = (array)($snapshot['query_order'] ?? []);
+        $timerQueryOrder = (array)($snapshot['timer_query_order'] ?? []);
+        $queryAt = (int)($queryOrder['queried_at'] ?? 0);
+        $timerQueryAt = (int)($timerQueryOrder['queried_at'] ?? 0);
+        $source = $timerQueryAt > $queryAt ? $timerQueryOrder : $queryOrder;
+        return isset($source['status']) ? (int)$source['status'] : null;
+    }
+
+    /**
+     * 构建不拉起新收银台的兼容响应。
+     * @param string $state
+     * @param array $tradeInfo
+     * @param string $message
+     * @return array
+     */
+    private function buildVirtualPaymentStateResponse(string $state, array $tradeInfo, string $message): array
+    {
+        $outTradeNo = (string)($tradeInfo['out_trade_no'] ?? '');
+        $this->message = $message;
+        return [
+            'provider' => 'virtual',
+            'platform' => 'wechat_virtual',
+            'method' => $this->method,
+            'state' => $state,
+            'out_trade_no' => $outTradeNo,
+            'outTradeNo' => $outTradeNo,
+            'message' => $message,
+        ];
+    }
+
+    /**
      * 获取虚拟支付配置
      * @return array
      */
@@ -834,7 +1137,12 @@ class Payment extends BaseService
             throwError('无权查询该支付订单');
         }
         $orderInfo = OrderModel::getDetail((int)$tradeInfo['order_id']);
-        if (!empty($orderInfo) && (int)($orderInfo['pay_status'] ?? 0) === PayStatusEnum::SUCCESS) {
+        $isOrderPaid = !empty($orderInfo)
+            && (int)($orderInfo['pay_status'] ?? 0) === PayStatusEnum::SUCCESS;
+        $channelClass = (int)($tradeInfo['channel_class'] ?? ChannelClassEnum::UNKNOWN);
+        // 支付成功事实与渠道分类事实必须分别收口。支付通知可能先把订单置为已支付，
+        // 但通知报文不含 order_type；此时仍需 query_order 补齐 Android / Apple 分类。
+        if ($isOrderPaid && $channelClass !== ChannelClassEnum::UNKNOWN) {
             return true;
         }
         $config = $this->getVirtualPaymentConfig();
@@ -896,7 +1204,8 @@ class Payment extends BaseService
         if (!empty($latestOrderInfo) && (int)($latestOrderInfo['pay_status'] ?? 0) === PayStatusEnum::SUCCESS) {
             return true;
         }
-        $this->pendingTradeQuery = in_array($status, [self::VIRTUAL_ORDER_STATUS_CREATED, self::VIRTUAL_ORDER_STATUS_PAYING], true);
+        // 只有上游明确 CLOSED 才能判定终态未支付；未知状态必须 fail closed。
+        $this->pendingTradeQuery = $status !== self::VIRTUAL_ORDER_STATUS_CLOSED;
         $this->setError($this->buildVirtualTradeQueryPendingMessage(
             \is_array($tradeInfo) ? $tradeInfo : $tradeInfo->toArray(),
             $status

@@ -19,6 +19,7 @@ use app\api\model\wxapp\Setting as WxappSettingModel;
 use app\api\service\order\PaySuccess as OrderPaySuccessService;
 use app\api\service\recharge\PaySuccess as RechargePaySuccessService;
 use app\common\service\order\Refund as OrderRefundService;
+use app\common\service\order\IosRefundRisk as IosRefundRiskService;
 use app\common\enum\OrderType as OrderTypeEnum;
 use app\common\enum\Setting as SettingEnum;
 use app\common\enum\payment\Method as PaymentMethodEnum;
@@ -40,10 +41,15 @@ class Notify
 {
     private const VIRTUAL_EVENT_PAY = 'xpay_goods_deliver_notify';
     private const VIRTUAL_EVENT_REFUND = 'xpay_refund_notify';
+    private const VIRTUAL_EVENT_IOS_REFUND_QUERY = 'xpay_subscribe_ios_refund_query_notify';
     private const VIRTUAL_PLATFORM = 'wechat_virtual';
 
     // 异步通知的请求参数 (由第三方支付发送)
     private array $notifyParams;
+
+    // 当前请求是否使用微信消息推送安全模式；仅非空业务回包需要沿用该模式加密。
+    private bool $virtualNotifyEncrypted = false;
+    private string $virtualNotifyNonce = '';
 
     /**
      * 微信消息推送 URL 验证
@@ -195,6 +201,7 @@ class Notify
     public function virtualPayment(): string
     {
         $responseFormat = 'json';
+        $event = '';
         try {
             [$notifyParams, $responseFormat] = $this->getVirtualNotifyParams();
             $event = (string)($notifyParams['Event'] ?? '');
@@ -202,12 +209,29 @@ class Notify
                 $this->handleVirtualPayNotify($notifyParams);
             } elseif ($event === self::VIRTUAL_EVENT_REFUND) {
                 $this->handleVirtualRefundNotify($notifyParams);
+            } elseif ($event === self::VIRTUAL_EVENT_IOS_REFUND_QUERY) {
+                $response = $this->handleVirtualIosRefundQueryNotify($notifyParams);
+                return $this->buildVirtualIosRefundQueryResponse(
+                    (int)$response['result_code'],
+                    (string)$response['result_info'],
+                    (string)$response['evidence'],
+                    $responseFormat
+                );
             } else {
                 throwError('未知的虚拟支付推送事件: ' . $event);
             }
             return $this->buildVirtualNotifyResponse(0, 'success', $responseFormat);
         } catch (\Throwable $e) {
-            Log::append('Notify-virtualPayment', ['errMessage' => $e->getMessage()]);
+            Log::append('Notify-virtualPayment', ['event' => $event, 'errMessage' => $e->getMessage()]);
+            if ($event === self::VIRTUAL_EVENT_IOS_REFUND_QUERY) {
+                // 异常时必须安全拒绝。不能在风险锁/问询记录未落库时向 Apple 建议退款。
+                return $this->buildVirtualIosRefundQueryResponse(
+                    1,
+                    '建议拒绝退款',
+                    '服务端暂时无法完成订单、审核与服务状态校验，建议本次拒绝并等待后续认证问询重试',
+                    $responseFormat
+                );
+            }
             return $this->buildVirtualNotifyResponse(1, $e->getMessage(), $responseFormat);
         }
     }
@@ -258,19 +282,39 @@ class Notify
     private function getVirtualNotifyParams(): array
     {
         $request = request();
-        $rawBody = (string)\file_get_contents('php://input');
+        // 统一从框架请求读取 body，生产上仍对应 php://input；也让已认证入口可在本地做无网络合同回归。
+        $rawBody = $request->getInput();
         $contentType = strtolower((string)$request->header('content-type'));
         $responseFormat = str_contains($contentType, 'xml') ? 'xml' : 'json';
+        return [$this->parseVirtualNotifyParams($rawBody, $contentType), $responseFormat];
+    }
+
+    /**
+     * 解析并验签虚拟支付推送参数。
+     * 独立于 php://input，便于对明文/安全模式入口做无网络回归验证。
+     * @param string $rawBody
+     * @param string $contentType
+     * @return array
+     */
+    private function parseVirtualNotifyParams(string $rawBody, string $contentType): array
+    {
         $data = $this->decodeVirtualNotifyBody($rawBody, $contentType);
         if (!is_array($data)) {
             throwError('虚拟支付推送报文异常');
         }
-        $data = $this->decryptVirtualNotifyPayloadIfNeeded($data, $rawBody);
-        $this->verifyVirtualNotifySource($data);
+        $this->virtualNotifyEncrypted = !empty($data['Encrypt']);
+        $this->virtualNotifyNonce = (string)request()->param('nonce', '');
+        if ($this->virtualNotifyEncrypted) {
+            // decrypt() 同时校验 msg_signature、appId 与密文完整性；解密后的业务体不再含 Encrypt，
+            // 不能继续按明文 signature 分支重复校验。
+            $data = $this->decryptVirtualNotifyPayloadIfNeeded($data);
+        } else {
+            $this->verifyVirtualNotifySource($data);
+        }
         if (empty($data['Event'])) {
             throwError('虚拟支付推送报文异常');
         }
-        return [$data, $responseFormat];
+        return $data;
     }
 
     /**
@@ -327,16 +371,64 @@ class Notify
             (string)($notifyParams['Event'] ?? ''),
             $notifyParams
         );
-        if ((int)($notifyParams['RetCode'] ?? -1) !== 0) {
+        if (!OrderRefundService::isSuccessfulVirtualRefundNotify($notifyParams)) {
+            $this->logVirtualRefundObservation('refund_notify_nonzero_retcode', [
+                'event' => (string)($notifyParams['Event'] ?? ''),
+                'trade_id' => (int)$tradeInfo['trade_id'],
+                'order_id' => (int)$tradeInfo['order_id'],
+                'out_trade_no' => (string)$tradeInfo['out_trade_no'],
+                'ret_code' => (string)($notifyParams['RetCode'] ?? ''),
+                'ret_msg' => (string)($notifyParams['RetMsg'] ?? ''),
+            ]);
             return;
         }
         $refundService = new OrderRefundService();
         $result = $refundService->finalizeVirtualRefundByTrade((int)$tradeInfo['trade_id'], $notifyParams);
+        $this->logVirtualRefundObservation('refund_notify_finalize_result', [
+            'event' => (string)($notifyParams['Event'] ?? ''),
+            'trade_id' => (int)$tradeInfo['trade_id'],
+            'order_id' => (int)$tradeInfo['order_id'],
+            'out_trade_no' => (string)$tradeInfo['out_trade_no'],
+            'ret_code' => (string)($notifyParams['RetCode'] ?? ''),
+            'result_status' => (string)($result['status'] ?? ''),
+            'result_mode' => (string)($result['mode'] ?? ''),
+            'order_refund_id' => (int)($result['order_refund_id'] ?? 0),
+            'message' => (string)($result['message'] ?? ''),
+        ]);
         if ((string)($result['status'] ?? '') !== 'completed') {
             $status = (string)($result['status'] ?? 'unknown');
             $message = (string)($result['message'] ?? '');
             throwError('虚拟支付退款通知待重试: ' . $status . ($message !== '' ? (' - ' . $message) : ''));
         }
+    }
+
+
+    /**
+     * 处理 Apple iOS 虚拟支付退款问询推送。
+     * Apple 支付不支持开发者主动退款，开发者在该事件中只能给出是否建议退款的参考意见。
+     * 为了保障用户在 App Store 发起退款后不被本系统误拦截，默认在无明确拒退依据时返回 result_code=0。
+     * @param array $notifyParams
+     * @return array{result_code:int,result_info:string,evidence:string}
+     */
+    private function handleVirtualIosRefundQueryNotify(array $notifyParams): array
+    {
+        $payOrderId = $this->getFirstString($notifyParams, [
+            'pay_order_id',
+            'PayOrderId',
+            'PayOrderID',
+            'MchOrderId',
+            'OutTradeNo',
+        ]);
+        $startedAt = microtime(true);
+        $result = (new IosRefundRiskService)->handleInquiry($payOrderId, $notifyParams, $startedAt);
+        $this->logVirtualRefundObservation('ios_refund_query_decision', [
+            'event' => (string)($notifyParams['Event'] ?? self::VIRTUAL_EVENT_IOS_REFUND_QUERY),
+            'pay_order_id' => $payOrderId,
+            'refund_request_reason' => $this->getFirstString($notifyParams, ['refund_request_reason', 'RefundRequestReason']),
+            'result_code' => (int)$result['result_code'],
+            'result_info' => (string)$result['result_info'],
+        ]);
+        return $result;
     }
 
     /**
@@ -366,10 +458,9 @@ class Notify
     /**
      * 安全模式下解密微信消息推送体
      * @param array $payload
-     * @param string $rawBody
      * @return array
      */
-    private function decryptVirtualNotifyPayloadIfNeeded(array $payload, string $rawBody): array
+    private function decryptVirtualNotifyPayloadIfNeeded(array $payload): array
     {
         if (empty($payload['Encrypt'])) {
             return $payload;
@@ -405,12 +496,6 @@ class Notify
         $signature = (string)request()->param('signature', '');
         $timestamp = (string)request()->param('timestamp', '');
         $nonce = (string)request()->param('nonce', '');
-        if (!empty($payload['Encrypt'])) {
-            if ($token === '' || (string)request()->param('msg_signature', '') === '' || $timestamp === '' || $nonce === '') {
-                throwError('虚拟支付安全模式推送缺少签名参数');
-            }
-            return;
-        }
         if ($token === '' || $signature === '' || $timestamp === '' || $nonce === '') {
             throwError('虚拟支付明文推送签名参数不完整');
         }
@@ -457,6 +542,83 @@ class Notify
         if ((int)$notifyParams['Env'] !== (int)$tradeInfo['env']) {
             throwError('虚拟支付推送环境不匹配');
         }
+    }
+
+    /**
+     * 构建 Apple iOS 退款问询专用回包。
+     * @param int $resultCode 0 建议退款，1 建议不退款
+     * @param string $resultInfo
+     * @param string $evidence
+     * @param string $format
+     * @return string
+     */
+    private function buildVirtualIosRefundQueryResponse(int $resultCode, string $resultInfo, string $evidence, string $format): string
+    {
+        $payload = [
+            'result_code' => $resultCode,
+            'result_info' => $resultInfo,
+            'evidence' => $evidence,
+        ];
+        if (!$this->virtualNotifyEncrypted) {
+            if ($format === 'xml') {
+                return response($payload, 200, [], 'xml')->getContent();
+            }
+            return helper::jsonEncode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+
+        // 安全模式下，非空业务回包也必须使用同一 EncodingAESKey 加密；否则微信无法
+        // 验证回包并可能将问询视为超时。Encryptor::encrypt() 返回 XML 包装，JSON
+        // 推送再将同一字段集转换回 JSON。
+        $config = $this->getVirtualMessagePushConfig();
+        $appId = (string)(WxappSettingModel::getConfigBasic()['app_id'] ?? '');
+        $token = trim((string)($config['message_push_token'] ?? ''));
+        $aesKey = trim((string)($config['message_push_encoding_aes_key'] ?? ''));
+        if ($appId === '' || $token === '' || $aesKey === '' || $this->virtualNotifyNonce === '') {
+            throwError('虚拟支付安全模式回包配置不完整');
+        }
+        $plain = $format === 'xml'
+            ? response($payload, 200, [], 'xml')->getContent()
+            : helper::jsonEncode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $timestamp = time();
+        $encryptor = new WechatEncryptor($appId, $token, $aesKey);
+        $encryptedXml = $encryptor->encrypt($plain, $this->virtualNotifyNonce, $timestamp);
+        if ($format === 'xml') {
+            return $encryptedXml;
+        }
+        $encryptedPayload = (array)(helper::xmlToArray($encryptedXml) ?: []);
+        if (empty($encryptedPayload['Encrypt']) || empty($encryptedPayload['MsgSignature'])) {
+            throwError('虚拟支付安全模式回包构建失败');
+        }
+        return helper::jsonEncode($encryptedPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * 从多种可能字段命名中取第一个非空字符串。
+     * @param array $payload
+     * @param array<int, string> $keys
+     * @return string
+     */
+    private function getFirstString(array $payload, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (isset($payload[$key]) && (string)$payload[$key] !== '') {
+                return (string)$payload[$key];
+            }
+        }
+        return '';
+    }
+
+    /**
+     * 记录虚拟支付退款链路观测日志，便于对齐本地申请、Apple问询、微信退款通知三段式状态。
+     * @param string $stage
+     * @param array $context
+     * @return void
+     */
+    private function logVirtualRefundObservation(string $stage, array $context = []): void
+    {
+        Log::append('Notify-virtualPayment-refundObservation', array_merge([
+            'stage' => $stage,
+        ], $context));
     }
 
     /**

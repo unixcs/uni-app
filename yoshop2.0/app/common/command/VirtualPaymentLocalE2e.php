@@ -114,7 +114,8 @@ class VirtualPaymentLocalE2e extends Command
                 'duplicate payment notifications increment notify_times but keep one paid order',
                 'duplicate payment notifications do not create refund rows',
                 'query_order snapshot with paid status converges order to paid',
-                'repeated pay attempts keep historical virtual out_trade_no available for late query/notify convergence',
+                'active virtual attempts reject a second out_trade_no before record replacement',
+                'historical duplicate virtual out_trade_no remains available for late query/notify convergence',
                 'late duplicate-payment callbacks do not reissue virtual refunds while refund is already processing',
                 'provide_goods dispatch claim is idempotent after success',
             ],
@@ -288,22 +289,46 @@ class VirtualPaymentLocalE2e extends Command
             'user_id' => $this->getOrCreateDebugUserId(),
         ];
         $newOutTradeNo = 'VPLOCAL' . date('YmdHis') . random_int(1000, 9999);
+        $newSnapshot = helper::jsonEncode([
+            'local_e2e' => [
+                'replayed_attempt' => true,
+                'original_out_trade_no' => (string)$fixture['out_trade_no'],
+                'outTradeNo' => $newOutTradeNo,
+            ],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         ApiPaymentTradeModel::$storeId = self::STORE_ID;
-        ApiPaymentTradeModel::record($orderInfo, PaymentMethodEnum::WECHAT, ClientEnum::MP_WEIXIN, OrderTypeEnum::ORDER, [
-            'out_trade_no' => $newOutTradeNo,
-            'platform' => 'wechat_virtual',
-            'env' => GoodsModel::VP_ENV_SANDBOX,
-            'product_id' => (string)$goods['vp_product_id'],
-            'goods_price' => (int)$goods['vp_price_snapshot'],
-            'attach' => (string)$fixture['order_no'],
-            'payload_snapshot' => helper::jsonEncode([
-                'local_e2e' => [
-                    'replayed_attempt' => true,
-                    'original_out_trade_no' => (string)$fixture['out_trade_no'],
-                    'outTradeNo' => $newOutTradeNo,
-                ],
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        ]);
+        $guarded = false;
+        try {
+            ApiPaymentTradeModel::record($orderInfo, PaymentMethodEnum::WECHAT, ClientEnum::MP_WEIXIN, OrderTypeEnum::ORDER, [
+                'out_trade_no' => $newOutTradeNo,
+                'platform' => 'wechat_virtual',
+                'env' => GoodsModel::VP_ENV_SANDBOX,
+                'product_id' => (string)$goods['vp_product_id'],
+                'goods_price' => (int)$goods['vp_price_snapshot'],
+                'attach' => (string)$fixture['order_no'],
+                'payload_snapshot' => $newSnapshot,
+            ]);
+        } catch (\Throwable $e) {
+            $guarded = str_contains($e->getMessage(), '请勿重复支付');
+        }
+        $this->assertTrue($guarded, 'active virtual attempt rejects a second out_trade_no');
+
+        // Historical production data can still contain duplicate attempts. Insert one directly so
+        // the rest of this E2E continues to prove late winner/loser callback convergence.
+        $historicalTrade = Db::name('payment_trade')->where('trade_id', '=', (int)$fixture['trade_id'])->find();
+        if (empty($historicalTrade)) {
+            throw new RuntimeException('historical duplicate fixture source trade missing');
+        }
+        unset($historicalTrade['trade_id']);
+        $historicalTrade['out_trade_no'] = $newOutTradeNo;
+        $historicalTrade['trade_no'] = '';
+        $historicalTrade['trade_state'] = TradeStatusEnum::UNPAID;
+        $historicalTrade['notify_times'] = 0;
+        $historicalTrade['last_notify_time'] = 0;
+        $historicalTrade['payload_snapshot'] = $newSnapshot;
+        $historicalTrade['create_time'] = time();
+        $historicalTrade['update_time'] = time();
+        Db::name('payment_trade')->insert($historicalTrade);
     }
 
     private function markOrderPaid(array $fixture, array $paymentData): void
