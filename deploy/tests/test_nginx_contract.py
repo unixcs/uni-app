@@ -29,6 +29,21 @@ class NginxContractTests(unittest.TestCase):
                 self.assertRegex(block, expected)
                 self.assertIn("root /mnt/vps/tencent/static-site;", block)
 
+    def test_both_configs_serve_filing_hosts_over_https(self) -> None:
+        for path in (PRODUCTION, MAINTENANCE):
+            with self.subTest(path=path.name):
+                block = server_block(
+                    path.read_text(),
+                    "gxwqb.cn www.gxwqb.cn",
+                    listen="443 ssl http2",
+                )
+                self.assertIn(
+                    "ssl_certificate /etc/letsencrypt/live/www.gxwqb.cn/fullchain.pem;",
+                    block,
+                )
+                self.assertIn("root /mnt/vps/tencent/static-site;", block)
+                self.assertIn("try_files $uri $uri/ /index.html;", block)
+
     def test_both_configs_keep_wx_acme_route(self) -> None:
         for path in (PRODUCTION, MAINTENANCE):
             with self.subTest(path=path.name):
