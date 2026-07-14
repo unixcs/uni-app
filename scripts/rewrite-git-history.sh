@@ -70,6 +70,20 @@ if filename.startswith(uploads_prefix) and filename != uploads_sentinel:
 return filename
 '
 
+# git-filter-repo 2.38 may leave local refs/replace mappings from old to new
+# commits. They are useful for debugging but keep rewrite-only refs alive and
+# could be pushed accidentally with --mirror. The final backup bundle already
+# preserves the pre-filter graph, so remove those mappings before pruning.
+mapfile -t replace_refs < <(git -C "$repo" for-each-ref --format='%(refname)' refs/replace/)
+for ref in "${replace_refs[@]}"; do
+  git -C "$repo" update-ref -d "$ref"
+done
+
+if git -C "$repo" for-each-ref --format='%(refname)' refs/replace/ | grep -q .; then
+  echo 'Verification failed: rewrite-only replace refs remain.' >&2
+  exit 1
+fi
+
 git -C "$repo" reflog expire --expire=now --all
 git -C "$repo" gc --prune=now --aggressive
 git -C "$repo" fsck --full --strict
