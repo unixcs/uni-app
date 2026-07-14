@@ -29,6 +29,9 @@ use Workerman\Worker;
  */
 class Timer extends Command
 {
+    private const WORKERMAN_RUNTIME_DIRECTORY = 'workerman';
+    private const WORKERMAN_FILE_PREFIX = 'timer';
+
     // 定时器句柄/ID
     protected $timer;
 
@@ -69,10 +72,124 @@ class Timer extends Command
     protected function execute(Input $input, Output $output)
     {
         $this->init($input, $output);
+        $this->configureWorkerRuntimePaths();
         // 创建定时器任务
         $worker = new Worker();
         $worker->onWorkerStart = [$this, 'start'];
-        $worker->runAll();
+        Worker::runAll();
+    }
+
+    /**
+     * Keep Workerman's mutable process files outside immutable releases.
+     *
+     * Workerman 3 creates a missing log with mode 0622, so the log is created
+     * and tightened here before Worker::runAll() initializes the framework.
+     */
+    protected function configureWorkerRuntimePaths(): void
+    {
+        $runtimePath = rtrim(app()->getRuntimePath(), '/\\');
+        if ($runtimePath === '') {
+            throw new \RuntimeException('Timer runtime path is empty');
+        }
+
+        if (!is_dir($runtimePath)
+            && !@mkdir($runtimePath, 0700, true)
+            && !is_dir($runtimePath)
+        ) {
+            throw new \RuntimeException("Unable to create Timer runtime root: {$runtimePath}");
+        }
+
+        $runtimeRoot = realpath($runtimePath);
+        if ($runtimeRoot === false || !is_dir($runtimeRoot)) {
+            throw new \RuntimeException("Unable to resolve Timer runtime root: {$runtimePath}");
+        }
+        if (!is_writable($runtimeRoot)) {
+            throw new \RuntimeException("Timer runtime root is not writable: {$runtimeRoot}");
+        }
+
+        $workermanDirectory = $runtimeRoot . DIRECTORY_SEPARATOR . self::WORKERMAN_RUNTIME_DIRECTORY;
+        if (is_link($workermanDirectory)) {
+            throw new \RuntimeException("Timer Workerman runtime directory must not be a symlink: {$workermanDirectory}");
+        }
+        if (file_exists($workermanDirectory) && !is_dir($workermanDirectory)) {
+            throw new \RuntimeException("Timer Workerman runtime path is not a directory: {$workermanDirectory}");
+        }
+        if (!is_dir($workermanDirectory)
+            && !@mkdir($workermanDirectory, 0700)
+            && !is_dir($workermanDirectory)
+        ) {
+            throw new \RuntimeException("Unable to create Timer Workerman runtime directory: {$workermanDirectory}");
+        }
+
+        clearstatcache(true, $workermanDirectory);
+        $resolvedDirectory = realpath($workermanDirectory);
+        if (is_link($workermanDirectory) || $resolvedDirectory !== $workermanDirectory) {
+            throw new \RuntimeException("Unsafe Timer Workerman runtime directory: {$workermanDirectory}");
+        }
+        if (!@chmod($workermanDirectory, 0700)) {
+            throw new \RuntimeException("Unable to secure Timer Workerman runtime directory: {$workermanDirectory}");
+        }
+        clearstatcache(true, $workermanDirectory);
+        if (!is_writable($workermanDirectory)) {
+            throw new \RuntimeException("Timer Workerman runtime directory is not writable: {$workermanDirectory}");
+        }
+
+        $pidFile = $workermanDirectory . DIRECTORY_SEPARATOR . self::WORKERMAN_FILE_PREFIX . '.pid';
+        $logFile = $workermanDirectory . DIRECTORY_SEPARATOR . self::WORKERMAN_FILE_PREFIX . '.log';
+        $this->assertSafeExistingRuntimeFile($pidFile, 'PID');
+        $this->prepareRuntimeLogFile($logFile);
+
+        Worker::$pidFile = $pidFile;
+        Worker::$logFile = $logFile;
+    }
+
+    private function assertSafeExistingRuntimeFile(string $path, string $label): void
+    {
+        if (is_link($path)) {
+            throw new \RuntimeException("Timer Workerman {$label} file must not be a symlink: {$path}");
+        }
+        if (!file_exists($path)) {
+            return;
+        }
+        if (!is_file($path)) {
+            throw new \RuntimeException("Timer Workerman {$label} path is not a regular file: {$path}");
+        }
+        if (!is_readable($path) || !is_writable($path)) {
+            throw new \RuntimeException("Timer Workerman {$label} file is not readable and writable: {$path}");
+        }
+    }
+
+    private function prepareRuntimeLogFile(string $logFile): void
+    {
+        $this->assertSafeExistingRuntimeFile($logFile, 'log');
+        if (!file_exists($logFile)) {
+            $handle = @fopen($logFile, 'x');
+            if ($handle !== false) {
+                fclose($handle);
+            }
+
+            // A concurrent creator is acceptable only when it produced the
+            // regular, non-symlink file required by the same contract.
+            $this->assertSafeExistingRuntimeFile($logFile, 'log');
+            if (!file_exists($logFile)) {
+                throw new \RuntimeException("Unable to create Timer Workerman log file: {$logFile}");
+            }
+        }
+
+        if (!@chmod($logFile, 0600)) {
+            throw new \RuntimeException("Unable to secure Timer Workerman log file: {$logFile}");
+        }
+        clearstatcache(true, $logFile);
+        $permissions = fileperms($logFile);
+        if ($permissions === false || ($permissions & 0777) !== 0600) {
+            throw new \RuntimeException("Timer Workerman log file has unsafe permissions: {$logFile}");
+        }
+
+        $handle = @fopen($logFile, 'ab');
+        if ($handle === false) {
+            throw new \RuntimeException("Timer Workerman log file is not writable: {$logFile}");
+        }
+        fclose($handle);
     }
 
     /**

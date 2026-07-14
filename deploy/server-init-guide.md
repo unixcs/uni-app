@@ -1,62 +1,63 @@
-# Tencent Cloud Ubuntu 22.04 server init guide
+# Tencent Ubuntu 22.04 one-time initialization
 
-This guide is the minimum order for OpenSpec task 4.1. It stops at platform
-bootstrap and does not deploy the full application code or frontend bundles.
+This guide is for rebuilding the host foundation, not for routine releases.
+Production never runs Git, Composer, or Node package downloads.
 
-## Recommended order
+## Foundation
 
-1. **Package install / base bootstrap**
-   - Run `deploy/scripts/bootstrap-ubuntu22.04-production.sh` as root.
-   - Confirm nginx, mysql-server, redis-server, `php8.3-fpm`, and `composer` are available.
+1. Keep the filing page, Docker/containerd, Certbot, Komari, Tencent agents, SSH,
+   Nginx, PHP 8.3, MySQL 8, and Redis.
+2. Run the reviewed `deploy/scripts/bootstrap-ubuntu22.04-production.sh` as root.
+   It creates restricted `deployer`, `/srv/yoshop`, security controls, log
+   bounds, swap, and the disabled Timer unit.
+3. Install the production and maintenance Nginx fragments from `deploy/nginx/`.
+   Keep maintenance enabled until the first candidate, DB, shared data, and
+   rollback path have all been verified.
+4. Install `deploy/mysql/60-yoshop-retention.cnf`, run
+   `mysqld --validate-config`, and use seven-day row-binlog retention.
 
-2. **Place the application env file**
-   - Copy `deploy/env/yoshop2.0.env.example` to `/opt/yoshop/yoshop2.0/.env`.
-   - Fill in the production host, database, and Redis values for `wx.gxwqb.cn`.
-   - Keep debug disabled and do not store secrets in the repo.
+## Protected production state
 
-3. **Create the database and import schema/data**
-   - Run `mysql_secure_installation` first.
-   - Create a dedicated database and application user.
-   - Import `deploy/sql/install.sql`.
-   - Import `deploy/sql/demo-content.sql` or other patch SQL only if required.
+Create these only through the authorized cutover procedure:
 
-4. **Install backend PHP dependencies**
-   - Run `cd /opt/yoshop/yoshop2.0 && composer install`.
-   - Do not pass `--no-scripts`, otherwise the PHP 8.3 compatibility patches will not run.
+```text
+/srv/yoshop/shared/.env
+/srv/yoshop/shared/mysql-client.cnf
+/srv/yoshop/shared/db-name
+/srv/yoshop/shared/uploads/
+/srv/yoshop/shared/payment/
+/srv/yoshop/shared/runtime/
+/srv/yoshop/shared/backups/
+```
 
-5. **Enable Nginx site**
-   - Copy `deploy/nginx/wx.gxwqb.cn.conf` to `/etc/nginx/sites-available/`.
-   - Link it into `/etc/nginx/sites-enabled/`.
-   - Validate with `nginx -t`, then reload nginx.
+`.env` and payment/DB credentials are never copied by a routine release. The
+one-time sanitized initializer is restored to a temporary DB and validated
+before the production DB is created.
 
-6. **Fix permissions**
-   - Ensure `/opt/yoshop/yoshop2.0/public`, `/public/admin`, and `/public/store` exist.
-   - Ensure `/opt/yoshop/yoshop2.0/public/uploads` and `/opt/yoshop/yoshop2.0/runtime` are writable by the PHP-FPM user.
-   - Recommended owner/group: `www-data:www-data`.
-   - Keep the web user able to read the site tree.
-   - Recheck ownership after any future code upload.
+## First release
 
-7. **Enable the timer supervisor**
-   - Copy `deploy/systemd/yoshop2.0-timer.service` into `/etc/systemd/system/`.
-   - Run `systemctl daemon-reload`.
-   - Enable and start `yoshop2.0-timer.service` so `php think timer start` is supervised by systemd and logs to journald.
+1. Commit and push a clean `main` only after the Git authorization gate.
+2. Build locally; inspect release ID, manifest, SHA-256, domain and secret scans.
+3. Prepare the immutable candidate with the independent PREPARE token while B
+   still returns maintenance 503.
+4. Validate DB/shared paths and a tested maintenance-vhost rollback command.
+5. At the production authorization gate, switch the reviewed business vhost and
+   explicitly activate the prepared ID. Restore maintenance immediately if
+   activation or smoke checks fail.
+6. Enable Timer only through successful activation; then observe restart count,
+   logs, memory, and disk.
 
-8. **Check services**
-   - Verify `systemctl status php8.3-fpm nginx mysql redis-server`.
-   - Verify `systemctl status yoshop2.0-timer.service`.
-   - Confirm PHP-FPM socket path is `/run/php/php8.3-fpm.sock`.
-   - Visit `https://wx.gxwqb.cn/` only after DNS and TLS are ready.
+## Routine releases
 
-9. **Prepare ops support basics**
-   - Create a backup location such as `/opt/yoshop/backups`.
-   - Keep `deploy/scripts/backup-mysql.sh` and `deploy/scripts/rollback-mysql.sh` available for manual ops.
-   - Recommended production DB name in current deployment: `yoshop2`.
-   - Validate ACME renewal with `deploy/scripts/renew-acme-cert.sh` if the environment uses certbot.
+Use only the documented `./deploy.sh release --fetch` flow in `deploy/README.md`.
+It builds locally, uses `deployer`, keeps shared production state untouched,
+and atomically switches immutable releases.
 
-## Manual security reminders
+## Certificate check
 
-- Replace all placeholders in `.env` before first launch.
-- Use a real database password and a least-privilege MySQL account.
-- Restrict Redis to localhost unless a private network and authentication are in place.
-- Add TLS/ACME and firewall rules before exposing the site publicly.
-- Keep a tested database backup and rollback path before each production change.
+Both `wx.gxwqb.cn` and `www.gxwqb.cn` must serve
+`/.well-known/acme-challenge/` from `/var/www/html`. Validate with:
+
+```bash
+sudo deploy/scripts/renew-acme-cert.sh --dry-run --no-random-sleep-on-renew
+```

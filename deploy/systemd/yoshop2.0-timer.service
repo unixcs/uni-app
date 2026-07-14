@@ -1,13 +1,46 @@
 [Unit]
 Description=YoShop 2.0 timer supervisor
-After=network.target
+After=network-online.target mysql.service redis-server.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/yoshop/yoshop2.0
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/yoshop/current/yoshop2.0
 ExecStart=/usr/bin/php think timer start
 Restart=on-failure
-RestartSec=5s
+RestartSec=15s
+UMask=0027
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProtectSystem=strict
+ReadWritePaths=/srv/yoshop/shared
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=~@clock @cpu-emulation @debug @module @mount @obsolete @privileged @raw-io @reboot @swap
+SystemCallErrorNumber=EPERM
+MemoryMax=768M
+TasksMax=128
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

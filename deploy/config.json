@@ -1,0 +1,12 @@
+{
+  "project": "yoshop",
+  "production_domain": "https://wx.gxwqb.cn",
+  "development_domain": "https://wx.oiob.cn",
+  "ssh_host": "124.222.144.181",
+  "ssh_user": "deployer",
+  "ssh_port": 22,
+  "remote_root": "/srv/yoshop",
+  "remote_release_command": "/usr/local/sbin/yoshop-release",
+  "health_url": "https://wx.gxwqb.cn/",
+  "retained_releases": 5
+}

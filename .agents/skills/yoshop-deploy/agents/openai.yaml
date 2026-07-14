@@ -1,0 +1,4 @@
+interface:
+  display_name: "YoShop 安全部署"
+  short_description: "本地全量构建、腾讯云原子发布、状态检查与安全回滚工作流"
+  default_prompt: "Use $yoshop-deploy to preflight and safely release the current YoShop main branch."

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the YoShop production backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=2h
+AccuracySec=5m
+Persistent=true
+Unit=yoshop-backup.service
+
+[Install]
+WantedBy=timers.target

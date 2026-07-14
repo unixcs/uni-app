@@ -65,8 +65,8 @@ return [
             'fields_strict' => true,
             // 是否需要断线重连
             'break_reconnect' => false,
-            // 监听SQL
-            'trigger_sql' => true,
+            // 监听SQL (受 .env database.debug 控制，生产环境关闭)
+            'trigger_sql' => env('database.debug', false),
             // 开启字段缓存
             'fields_cache' => false,
             // 字段缓存路径

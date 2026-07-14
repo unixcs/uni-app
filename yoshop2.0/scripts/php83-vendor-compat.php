@@ -5,6 +5,28 @@ declare(strict_types=1);
 $projectRoot = dirname(__DIR__);
 
 $replacements = [
+    'vendor/workerman/workerman/Events/Select.php' => [
+        [
+            'search' => "class Select implements EventInterface\n{\n    /**\n     * All listeners for read/write event.\n",
+            'replace' => "class Select implements EventInterface\n{\n    /**\n     * Normalize a float timeout in microseconds to a safe integer for PHP 8.3+\n     * stream_select/usleep no longer accept implicit float-to-int conversion.\n     */\n    protected function normalizeTimeout(\$timeout): int\n    {\n        if (!\\is_numeric(\$timeout)) {\n            return 0;\n        }\n        if (\$timeout <= 0) {\n            return 0;\n        }\n        return (int) max(1, min(100000000, round((float) \$timeout)));\n    }\n\n    /**\n     * All listeners for read/write event.\n",
+        ],
+        [
+            'search' => "                \$select_timeout = (\$run_time - \\microtime(true)) * 1000000;\n                if( \$this->_selectTimeout > \$select_timeout ){ \n                    \$this->_selectTimeout = \$select_timeout;   \n                }  \n",
+            'replace' => "                \$select_timeout = \$this->normalizeTimeout((\$run_time - \\microtime(true)) * 1000000);\n                if (\$this->_selectTimeout > \$select_timeout) {\n                    \$this->_selectTimeout = \$select_timeout;\n                }\n",
+        ],
+        [
+            'search' => "            \$this->_selectTimeout = (\$next_run_time - \$time_now) * 1000000;\n",
+            'replace' => "            \$this->_selectTimeout = \$this->normalizeTimeout((\$next_run_time - \$time_now) * 1000000);\n",
+        ],
+        [
+            'search' => "                \$ret = stream_select(\$read, \$write, \$except, 0, \$this->_selectTimeout);\n",
+            'replace' => "                \$ret = stream_select(\$read, \$write, \$except, 0, \$this->normalizeTimeout(\$this->_selectTimeout));\n",
+        ],
+        [
+            'search' => "                usleep(\$this->_selectTimeout);\n",
+            'replace' => "                usleep(\$this->normalizeTimeout(\$this->_selectTimeout));\n",
+        ],
+    ],
     'vendor/myclabs/php-enum/src/Enum.php' => [
         [
             'search' => "    public function jsonSerialize()\n",

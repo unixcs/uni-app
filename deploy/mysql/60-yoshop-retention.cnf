@@ -1,0 +1,6 @@
+[mysqld]
+# Seven days of row-based binlogs support point-in-time investigation/recovery
+# without allowing the 69 GiB system disk to grow without bound.
+binlog_expire_logs_seconds = 604800
+sync_binlog = 1
+innodb_flush_log_at_trx_commit = 1

@@ -1,34 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 IFS=$'\n\t'
+umask 027
 
-# Minimal ACME renewal helper for production ops.
-#
-# Usage:
-#   sudo ./deploy/scripts/renew-acme-cert.sh
-#
-# Optional env vars:
-#   NGINX_SERVICE   Default: nginx
-#   CERTBOT_ARGS    Additional args passed to certbot renew
+usage() {
+  cat <<'USAGE'
+Usage: sudo renew-acme-cert.sh [certbot-renew-options]
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Missing required command: $1" >&2
-    exit 1
-  }
+Examples:
+  sudo renew-acme-cert.sh --dry-run --no-random-sleep-on-renew
+  sudo renew-acme-cert.sh
+
+Arguments are forwarded as an array to `certbot renew`; do not put secrets in
+arguments. The command validates Nginx before reloading it.
+USAGE
 }
 
-NGINX_SERVICE="${NGINX_SERVICE:-nginx}"
-CERTBOT_ARGS="${CERTBOT_ARGS:-}"
+if [[ ${1:-} == --help ]]; then usage; exit 0; fi
+[[ ${EUID:-$(id -u)} -eq 0 ]] || { echo 'Run as root.' >&2; exit 1; }
+for command in certbot nginx systemctl; do
+  command -v "$command" >/dev/null 2>&1 || { echo "Missing required command: $command" >&2; exit 1; }
+done
 
-require_cmd certbot
-require_cmd systemctl
-
-if ! certbot renew --quiet ${CERTBOT_ARGS}; then
-  echo "ACME renewal failed." >&2
-  exit 1
-fi
-
-systemctl reload "${NGINX_SERVICE}"
-echo "ACME renewal check completed; ${NGINX_SERVICE} reloaded."
+certbot renew --quiet "$@"
+nginx -t
+systemctl reload nginx
+printf '%s\n' 'ACME renewal completed; Nginx configuration validated and reloaded.'

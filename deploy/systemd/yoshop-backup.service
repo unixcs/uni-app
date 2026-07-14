@@ -1,0 +1,47 @@
+[Unit]
+Description=YoShop root-only production backup
+After=mysql.service
+RequiresMountsFor=/srv/yoshop/shared
+ConditionPathIsDirectory=/srv/yoshop/shared/backups
+ConditionPathIsReadWrite=/srv/yoshop/shared/backups
+ConditionPathExists=/srv/yoshop/shared/mysql-client.cnf
+ConditionPathExists=/srv/yoshop/shared/db-name
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/sbin/backup-mysql.sh --type daily
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+CPUQuota=50%
+MemoryMax=768M
+TasksMax=64
+LimitNOFILE=4096
+TimeoutStartSec=2h
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+ReadOnlyPaths=/srv/yoshop/shared/.env
+ReadOnlyPaths=/srv/yoshop/shared/mysql-client.cnf
+ReadOnlyPaths=/srv/yoshop/shared/db-name
+ReadOnlyPaths=/srv/yoshop/shared/uploads
+ReadOnlyPaths=/srv/yoshop/shared/payment
+ReadWritePaths=/srv/yoshop/shared/backups
+StandardOutput=journal
+StandardError=journal

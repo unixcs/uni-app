@@ -1,0 +1,208 @@
+{
+  "format_version": 1,
+  "safe_data_tables": [
+    {
+      "name": "store"
+    },
+    {
+      "name": "article_category"
+    },
+    {
+      "name": "article"
+    },
+    {
+      "name": "category"
+    },
+    {
+      "name": "delivery"
+    },
+    {
+      "name": "delivery_rule"
+    },
+    {
+      "name": "express"
+    },
+    {
+      "name": "goods_service"
+    },
+    {
+      "name": "spec"
+    },
+    {
+      "name": "spec_value"
+    },
+    {
+      "name": "goods"
+    },
+    {
+      "name": "goods_category_rel"
+    },
+    {
+      "name": "goods_image"
+    },
+    {
+      "name": "goods_service_rel"
+    },
+    {
+      "name": "goods_sku"
+    },
+    {
+      "name": "goods_spec_rel"
+    },
+    {
+      "name": "help"
+    },
+    {
+      "name": "page"
+    },
+    {
+      "name": "region"
+    },
+    {
+      "name": "store_address"
+    },
+    {
+      "name": "store_api"
+    },
+    {
+      "name": "store_menu"
+    },
+    {
+      "name": "store_menu_api"
+    },
+    {
+      "name": "store_role"
+    },
+    {
+      "name": "store_role_menu"
+    },
+    {
+      "name": "store_setting",
+      "where": "`key` IN ('customer','register')"
+    },
+    {
+      "name": "upload_group"
+    }
+  ],
+  "direct_upload_relations": [
+    {
+      "table": "article",
+      "column": "image_id"
+    },
+    {
+      "table": "category",
+      "column": "image_id"
+    },
+    {
+      "table": "goods",
+      "column": "video_id"
+    },
+    {
+      "table": "goods",
+      "column": "video_cover_id"
+    },
+    {
+      "table": "goods_image",
+      "column": "image_id"
+    },
+    {
+      "table": "goods_sku",
+      "column": "image_id"
+    },
+    {
+      "table": "store",
+      "column": "logo_image_id"
+    }
+  ],
+  "safe_content_sources": [
+    {
+      "table": "article",
+      "primary_key": "article_id",
+      "column": "content",
+      "format": "text"
+    },
+    {
+      "table": "goods",
+      "primary_key": "goods_id",
+      "column": "content",
+      "format": "text"
+    },
+    {
+      "table": "help",
+      "primary_key": "help_id",
+      "column": "content",
+      "format": "text"
+    },
+    {
+      "table": "page",
+      "primary_key": "page_id",
+      "column": "page_data",
+      "format": "json"
+    }
+  ],
+  "required_empty_tables": [
+    "admin_user",
+    "h5_setting",
+    "cart",
+    "comment",
+    "comment_image",
+    "coupon",
+    "order",
+    "order_address",
+    "order_delivery",
+    "order_delivery_goods",
+    "order_export",
+    "order_goods",
+    "order_refund",
+    "order_refund_address",
+    "order_refund_image",
+    "payment",
+    "payment_ios_refund_inquiry",
+    "payment_template",
+    "payment_trade",
+    "printer",
+    "recharge_order",
+    "recharge_order_plan",
+    "recharge_plan",
+    "store_user",
+    "store_user_role",
+    "system_process",
+    "user",
+    "user_address",
+    "user_balance_log",
+    "user_coupon",
+    "user_feedback",
+    "user_grade",
+    "user_grade_log",
+    "user_oauth",
+    "user_points_log",
+    "wxapp_setting"
+  ],
+  "private_tables": [
+    "admin_user",
+    "h5_setting",
+    "payment",
+    "payment_ios_refund_inquiry",
+    "payment_template",
+    "payment_trade",
+    "store_user",
+    "store_user_role",
+    "user",
+    "user_address",
+    "user_balance_log",
+    "user_coupon",
+    "user_feedback",
+    "user_grade",
+    "user_grade_log",
+    "user_oauth",
+    "user_points_log",
+    "wxapp_setting"
+  ],
+  "allowed_store_setting_keys": [
+    "customer",
+    "register"
+  ],
+  "forbidden_public_domains": [
+    "wx.oiob.cn"
+  ]
+}
