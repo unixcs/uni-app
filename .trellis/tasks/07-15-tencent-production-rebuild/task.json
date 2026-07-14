@@ -1,0 +1,32 @@
+{
+  "id": "tencent-production-rebuild",
+  "name": "tencent-production-rebuild",
+  "title": "腾讯云生产重建与可持续部署",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "multi-package/production-migration",
+  "package": null,
+  "priority": "P0",
+  "creator": "feng",
+  "assignee": "feng",
+  "createdAt": "2026-07-15",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-15-repo-history-cleanup",
+    "07-15-deployment-tooling-skill",
+    "07-15-tencent-infra-rebuild",
+    "07-15-production-data-cutover",
+    "07-15-ops-security-finish"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

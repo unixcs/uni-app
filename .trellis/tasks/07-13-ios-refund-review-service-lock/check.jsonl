@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/virtual-payment-contracts.md", "reason": "Apple问询认证、响应、退款成功收口和锁顺序契约"}
+{"file": ".trellis/spec/frontend/service-order-contracts.md", "reason": "服务订单阶段、退款审核和跨端状态投影契约"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "商家端构建部署、错误保护和视觉验证门禁"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流、并发和状态一致性检查"}
+{"file": ".trellis/tasks/07-13-ios-refund-review-service-lock/research/apple-refund-repeat-limitations.md", "reason": "Apple再次申请、最终决策和无法查询拒绝结果的能力边界"}

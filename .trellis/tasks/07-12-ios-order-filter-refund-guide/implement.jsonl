@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/service-order-contracts.md", "reason": "订单筛选与iOS退款前端契约"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Vue页面与Ant Design组件规范"}
+{"file": ".trellis/spec/backend/virtual-payment-contracts.md", "reason": "iOS虚拟支付退款与回调契约"}
+{"file": ".trellis/tasks/07-12-ios-order-filter-refund-guide/research/order-334098380149377916.md", "reason": "真实iOS订单识别证据"}

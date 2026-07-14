@@ -98,3 +98,4 @@ Agent.md
 # Local deployment packages and machine reports
 /deploy/out/
 /deploy/reports/
+/.trellis/tasks/**/research/*.diff
