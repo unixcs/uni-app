@@ -1,17 +1,100 @@
-*.log
+# OS / editor metadata
+.DS_Store
+Thumbs.db
 *.Zone.Identifier
 *:Zone.Identifier
-.DS_Store
 .idea/
 .vscode/
-01.md
-Agent.md
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Local tooling/workspace artifacts
+# Local AI/editor/runtime workspaces (project Trellis specs/tasks remain tracked)
 /.claude/
 /.codex/
+/.opencode/
 /.workbuddy/
 /runtime/
 /tmp/
 /node_modules/
-/.opencode/
+
+# Dependencies (lock files remain tracked)
+**/node_modules/
+/yoshop2.0/vendor/
+
+# Generated frontend outputs
+/yoshop2.0-admin/dist/
+/yoshop2.0-store/dist/
+/yoshop2.0-uniapp/dist/
+/yoshop2.0-uniapp/unpackage/
+/yoshop2.0-uniapp/.vite/
+/yoshop2.0/public/admin/
+/yoshop2.0/public/store/
+/yoshop2.0/public/assets/
+/yoshop2.0/public/index.html
+/yoshop2.0/public/config.js
+
+# Backend runtime and user-generated data
+/yoshop2.0/runtime/
+/yoshop2.0/public/temp/
+/yoshop2.0/public/downloads/
+/yoshop2.0/public/uploads/*
+!/yoshop2.0/public/uploads/.gitignore
+/yoshop2.0/data/*
+!/yoshop2.0/data/.gitignore
+
+# Local environment and secret material
+.env
+.env.*
+!.env.example
+!*.env.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/*.env.example
+!**/.env.tpl
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Logs, caches, coverage, temporary archives and database dumps
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/.cache/
+**/.sass-cache/
+**/.eslintcache
+**/__pycache__/
+**/*.py[cod]
+coverage/
+.nyc_output/
+*.sql.gz
+*.dump
+*.bak
+*.tmp
+*.temp
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Project-local scratch notes retained only on the developer machine
+01.md
+Agent.md
+**/更新节点.txt
+**/待处理.txt
+
+# Trellis raw machine evidence and pre-edit snapshots stay local. They can
+# contain PII or duplicate source; keep only sanitized Markdown conclusions.
+/.trellis/tasks/**/research/evidence/*.json
+/.trellis/tasks/**/research/pre-edit/
+
+# Local deployment packages and machine reports
+/deploy/out/
+/deploy/reports/
