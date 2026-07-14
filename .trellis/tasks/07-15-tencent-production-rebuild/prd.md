@@ -92,15 +92,15 @@
 
 ## Acceptance Criteria
 
-- [ ] AC1：本地恢复包、Git bundle、未提交改动、本地 DB/uploads/env/支付资料均有校验，恢复演练成功。
-- [ ] AC2：仓库只追踪源代码、锁文件、测试、迁移和部署资产；历史生成物/uploads 被过滤，原 GitHub 地址更新成功。
-- [ ] AC3：PHP、本地 Nginx、admin/store/H5 构建、测试和 WSL→Windows 小程序构建全部通过。
-- [ ] AC4：`$yoshop-deploy` 与 `./deploy.sh production` 完成预检、完整构建、上传、备份、迁移、原子切换、健康检查和失败回滚演练。
-- [ ] AC5：腾讯云磁盘恢复到安全水位；旧日志循环根因消除；Docker、备案页、证书、Komari、腾讯云代理保持正常。
-- [ ] AC6：生产目录与数据分离，env/uploads/payment/DB 不会被日常发布覆盖，权限检查通过。
-- [ ] AC7：生产数据库只含干净业务基线；测试交易/用户数据为零；商品/页面/图片引用完整。
-- [ ] AC8：域名 B 的 H5/API/admin/store/uploads/healthz/回调路径全部通过；旧域名不再用于正式业务。
-- [ ] AC9：Timer 稳定运行且熔断/日志限额有效；模拟异常不会再次填满磁盘。
-- [ ] AC10：数据库备份、binlog、恢复、代码回滚和版本清理均验证；COS 暂缓状态清晰记录。
-- [ ] AC11：`/mnt/vps/tencent` 文档无明文秘密，包含发布/回滚/故障/密钥轮换手册。
-- [ ] AC12：Git 提交和生产部署均有明确用户授权记录和最终发布报告。
+- [x] AC1：本地恢复包、Git bundle、未提交改动、本地 DB/uploads/env/支付资料均有校验，恢复演练成功。
+- [x] AC2：仓库只追踪源代码、锁文件、测试、迁移和部署资产；历史生成物/uploads 被过滤，原 GitHub 地址更新成功。
+- [x] AC3：PHP、本地 Nginx、admin/store/H5 构建、测试和 WSL→Windows 小程序构建全部通过。
+- [x] AC4：`$yoshop-deploy` 与 `./deploy.sh production` 完成预检、完整构建、上传、备份、迁移、原子切换、健康检查和失败回滚演练。
+- [x] AC5：腾讯云磁盘恢复到安全水位；旧日志循环根因消除；Docker、备案页、证书、Komari、腾讯云代理保持正常。
+- [x] AC6：生产目录与数据分离，env/uploads/payment/DB 不会被日常发布覆盖，权限检查通过。
+- [x] AC7：生产数据库只含干净业务基线；测试交易/用户数据为零；商品/页面/图片引用完整。
+- [x] AC8：域名 B 的 H5/API/admin/store/uploads/healthz/回调路径全部通过；旧域名不再用于正式业务。
+- [x] AC9：Timer 稳定运行且熔断/日志限额有效；模拟异常不会再次填满磁盘。
+- [x] AC10：数据库备份、binlog、恢复、代码回滚和版本清理均验证；COS 暂缓状态清晰记录。
+- [x] AC11：`/mnt/vps/tencent` 文档无明文秘密，包含发布/回滚/故障/密钥轮换手册。
+- [x] AC12：Git 提交和生产部署均有明确用户授权记录和最终发布报告。

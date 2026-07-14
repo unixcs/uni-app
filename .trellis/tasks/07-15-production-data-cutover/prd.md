@@ -11,9 +11,9 @@
 - 正式业务/回调统一 B；A 仅本地测试。后端兼容旧客户端。
 
 ## Acceptance Criteria
-- [ ] 生产交易/用户测试表为空，11 个商品等白名单数据和引用图片完整。
-- [ ] env/uploads/payment/DB 位于共享/独立存储且不会被发布覆盖。
-- [ ] B 的 health/H5/API/admin/store/uploads/回调路径和 HTTPS 通过。
-- [ ] Timer 在观察窗口稳定，无 crash storm/异常日志增长。
-- [ ] 代码回滚演练不损失生产基线，维护页仅在全绿后撤除。
-- [ ] 体验版指向 B 的最终验收步骤和正式发布说明完成。
+- [x] 生产交易/用户测试表为空，11 个商品等白名单数据和引用图片完整。
+- [x] env/uploads/payment/DB 位于共享/独立存储且不会被发布覆盖。
+- [x] B 的 health/H5/API/admin/store/uploads/回调路径和 HTTPS 通过。
+- [x] Timer 在观察窗口稳定，无 crash storm/异常日志增长。
+- [x] 代码回滚演练不损失生产基线，维护页仅在全绿后撤除。
+- [x] 体验版指向 B 的最终验收步骤和正式发布说明完成。

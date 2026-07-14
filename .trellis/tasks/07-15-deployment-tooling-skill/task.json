@@ -21,6 +21,6 @@
   "children": [],
   "parent": "07-15-tencent-production-rebuild",
   "relatedFiles": [],
-  "notes": "Implementation and isolated full-build/release/rollback tests pass. Live build/deploy waits for the explicit Git commit/push and production authorization gates.",
+  "notes": "Completed: guarded deploy Skill and scripts, deterministic double-build proof, live release and rollback rehearsal, production permissions regression coverage, and 10/10 smoke.",
   "meta": {}
 }

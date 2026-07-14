@@ -21,6 +21,6 @@
   "children": [],
   "parent": "07-15-tencent-production-rebuild",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Completed: sanitized 64-table production baseline, protected shared data, B-domain activation, virtual payment disabled, live smoke and rollback without data drift.",
   "meta": {}
 }

@@ -12,8 +12,8 @@
 - Docker保留；备案页由宿主 Nginx 直接服务，唯一源为 `/mnt/vps/tencent/static-site/index.html`。
 
 ## Acceptance Criteria
-- [ ] Timer 停止后日志增长归零，清理后磁盘低于 70% 且保留足够发布/备份空间。
-- [ ] 仅 22/80/443 公网监听，MySQL/Redis 为 loopback。
-- [ ] Nginx/PHP/MySQL/Redis/Docker/Certbot/Komari/腾讯云代理正常。
-- [ ] `deployer` 可完成受限发布但不能任意 sudo。
-- [ ] 日志轮转、journal 上限、swap、防火墙/Fail2ban 和熔断验证通过。
+- [x] Timer 停止后日志增长归零，清理后磁盘低于 70% 且保留足够发布/备份空间。
+- [x] 仅 22/80/443 公网监听，MySQL/Redis 为 loopback。
+- [x] Nginx/PHP/MySQL/Redis/Docker/Certbot/Komari/腾讯云代理正常。
+- [x] `deployer` 可完成受限发布但不能任意 sudo。
+- [x] 日志轮转、journal 上限、swap、防火墙/Fail2ban 和熔断验证通过。

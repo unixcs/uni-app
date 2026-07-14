@@ -60,3 +60,31 @@ Local release compatibility was also corrected so Composer applies the exact
 Workerman `Select` integer-timeout patch that stopped the PHP 8.3 crash; a clean
 upstream fixture patch/idempotency test passes. The WSL Timer has run stably for
 18+ hours with that patch and no float crash.
+
+## Final production foundation state
+
+The earlier maintenance-page, no-current-release, and disabled-Timer statements
+are retained as rebuild-stage evidence. After the separately authorized
+cutover, the final production foundation on 2026-07-15 was:
+
+- release status `ok`; current `20260714215523-b777b892d048`, previous
+  `20260714210305-c8ac8179f5c8`, three release directories present, disk 13%;
+- production smoke checks 10/10 after the live release and 10/10 after the live
+  code rollback; the latest release was then restored;
+- shared state remained unchanged across deploy/rollback/restore (snapshot
+  SHA-256 `11a88da94d69be1fd18a308a57beb1a2e582027feecf69ecb2b5b49ad7d59b7f`);
+- `/srv/yoshop` root 0711, incoming `deployer:www-data` 0750, backups
+  `root:root` 0700; the restricted deployer-boundary regression passed;
+- UFW active with only 22/80/443 exposed, Fail2ban SSH jail active, no unknown
+  public TCP listeners, no failed units, and all essential application and host
+  services active;
+- password and keyboard-interactive SSH authentication disabled, public-key
+  authentication enabled, and maximum authentication attempts set to 3;
+- Docker and containerd preserved; the filing site is served directly by host
+  Nginx from `/mnt/vps/tencent/static-site`;
+- ModemManager, udisks2, upower, PackageKit, and fwupd absent as intended.
+
+The final Timer passed its stability window: more than 34 minutes observed,
+enabled and active, `NRestarts=0` before and after a final 60-second sample,
+zero warning-or-higher journal entries, zero Timer-log growth, and PID state in
+the shared runtime path. Manual SSH-key rotation remains deferred.

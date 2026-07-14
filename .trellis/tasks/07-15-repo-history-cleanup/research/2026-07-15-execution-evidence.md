@@ -121,3 +121,20 @@ many legacy rule violations). This is not hidden as a green check. Current
 changed store paths pass focused ESLint, both applications compile, and no
 unrelated mass auto-format was applied because that would violate the scoped
 cleanup and increase regression risk.
+
+## Final history-rewrite execution
+
+The earlier statements that no commit, push, or live rewrite had occurred are
+preserved above as evidence of the pre-authorization phase. They were
+superseded after the explicit execution gate was granted on 2026-07-15:
+
+- `main` at the original GitHub remote (`git@github.com:unixcs/uni-app.git`) was
+  rewritten and updated with `--force-with-lease`.
+- Historical generated outputs, non-sentinel uploads, and committed key
+  material were absent from the rewritten full history; strict `git fsck`
+  passed.
+- At the final execution checkpoint, the working tree was clean and `.git` was
+  approximately 7.5 MiB.
+- The previously exposed WxApp AppSecret was redacted from history, but history
+  removal does not revoke a credential. Manual WxApp AppSecret rotation remains
+  mandatory and deferred; no secret value is recorded in this evidence.

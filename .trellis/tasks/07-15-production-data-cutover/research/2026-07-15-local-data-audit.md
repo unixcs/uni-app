@@ -96,3 +96,32 @@ Plaintext first-login and DB credentials remain only in `/root/yoshop-cutover-pr
 ## Prepared server tooling (not an application release)
 
 The reviewed candidate-aware `/usr/local/sbin/yoshop-release` was installed on Tencent and its `status` command succeeds through the restricted `deployer` sudo rule. Inactive production and maintenance Nginx configs were installed under `sites-available`; the currently enabled site remains the 503 maintenance configuration. The inactive production config passes an isolated `nginx -t` syntax check. No candidate/current release exists, Timer remains disabled, and B has not been cut over.
+
+## Final production data cutover
+
+The preceding statements that the bootstrap had not been imported and that no
+active release existed are preserved as pre-authorization evidence. The
+separately authorized production cutover completed on 2026-07-15 with the
+following sanitized final state:
+
+- 64 tables, 11 goods, one page, four approved uploads, one admin, and one store
+  user;
+- zero customer users, orders, refunds, payment trades, or feedback-history
+  rows;
+- virtual payment disabled, production environment selected, B-domain notify
+  configuration selected, and virtual-payment secret fields blank;
+- zero A-domain references in the final production checks;
+- uploads, payment material, and `.env` remained independent shared links; their
+  checksums and the shared-state snapshot stayed unchanged through live deploy,
+  rollback, and restoration (snapshot digest abbreviated as
+  `11a88d...d59b7f`).
+
+The daily backup `daily-20260714T211208Z.complete` exists. A real temporary
+restore completed successfully with all 64 tables; database checksums and
+uploads were verified, and the temporary database was removed. The backup
+timer is enabled and active.
+
+No plaintext account password, credential, private SQL, or payment-key content
+is included here. First-login admin/store password changes remain manual and
+required. COS/CAM/offsite backup remains deferred, so the verified local backup
+does not yet provide host-loss recovery.

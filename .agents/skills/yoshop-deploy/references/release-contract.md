@@ -13,12 +13,20 @@
 The remote release command replaces release code only and recreates links to
 shared data. Local files cannot overwrite these shared paths.
 
+The executor must reassert the production directory boundary on every command:
+`/srv/yoshop` 0711, `incoming` deployer:www-data 0750, `releases`/`state`
+root:www-data 0750, `shared/backups` root:root 0700, and shared writable
+uploads/runtime www-data:www-data 0770. This prevents status/install from
+silently reopening backups or making `incoming` unreachable to deployer.
+
 ## Expected checks
 
 - `preflight`: main, clean tree/index, HEAD equals refreshed origin/main, no
   generated/private path tracked.
 - `build`: local Composer/frontend builds, secret scan, A/B domain scan,
-  per-file manifest, reproducible archive, package SHA-256.
+  per-file manifest, reproducible archive, package SHA-256. Two builds of the
+  same pushed commit must have identical package and manifest SHA-256 values;
+  a matching release ID alone is insufficient.
 - `install`: archive traversal defense, checksum/manifest/entry-point checks,
   shared links, one-time checksum-pinned SQL migrations, atomic symlink, service
   restart, local and public HTTPS health checks, automatic code rollback.
@@ -32,6 +40,16 @@ shared data. Local files cannot overwrite these shared paths.
 5. Nginx, PHP-FPM, MySQL, Redis, and timer service are healthy.
 6. Upload directory and payment path resolve under `/srv/yoshop/shared`.
 7. No repeating timer exception or rapid log growth appears.
+
+## Rollback and roll-forward
+
+Rollback swaps the recorded `current` and `previous` immutable releases. If the
+operator approves returning to the release that was just rolled back, invoke
+the guarded rollback command again; do not rebuild or reinstall the same
+commit. A pushed commit has one deterministic release ID, and an existing
+immutable release must reject duplicate installation. New deployment uses a
+new commit and a new release ID. Database migrations are never reversed by
+code rollback.
 
 ## Failure evidence
 

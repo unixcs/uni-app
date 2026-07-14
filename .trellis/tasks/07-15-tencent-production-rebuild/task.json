@@ -27,6 +27,6 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "Completed: all five migration children passed; production current is 20260714215523-b777b892d048 with 10/10 smoke, stable Timer, verified backup/restore, and documented manual follow-ups.",
   "meta": {}
 }

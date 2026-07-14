@@ -12,8 +12,8 @@
 - WSL 为源码事实源，Windows 镜像可重建。
 
 ## Acceptance Criteria
-- [ ] 备份有 SHA-256 且临时恢复验证通过。
-- [ ] `git status --ignored` 与 `git ls-files` 证明依赖/秘密/生成物/上传未被追踪。
-- [ ] PHP、测试、admin/store/H5 和小程序 Windows 编译链路在清理后通过。
-- [ ] 清理后历史仍含有效提交，垃圾路径在所有 refs 中消失，`git fsck` 通过。
-- [ ] 经用户提交/推送授权后原 GitHub main 更新成功。
+- [x] 备份有 SHA-256 且临时恢复验证通过。
+- [x] `git status --ignored` 与 `git ls-files` 证明依赖/秘密/生成物/上传未被追踪。
+- [x] PHP、测试、admin/store/H5 和小程序 Windows 编译链路在清理后通过。
+- [x] 清理后历史仍含有效提交，垃圾路径在所有 refs 中消失，`git fsck` 通过。
+- [x] 经用户提交/推送授权后原 GitHub main 更新成功。

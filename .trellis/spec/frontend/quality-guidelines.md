@@ -104,3 +104,100 @@ its hashed bundles, `/store/` returns that index after activation, and the actua
 HTTP JS bundle contains the expected feature marker. Restarting PHP-FPM cannot
 publish Vue assets. Do not manually rsync generated output into a mutable app
 folder or commit it as a deployment artifact.
+
+## Deterministic Release Package Contract
+
+### 1. Scope / Trigger
+
+This contract applies whenever `deploy/deploy.py`, Composer release assembly,
+admin/store production output, manifest generation, or archive construction is
+changed. It prevents the same pushed commit from producing a different package
+because of wall-clock data, install order, nested repository state, or unstable
+Webpack asset names.
+
+### 2. Signatures
+
+```bash
+./deploy.sh preflight --fetch
+./deploy.sh build --fetch
+./deploy.sh release --fetch --dry-run
+./deploy.sh release --fetch --confirm-production DEPLOY-wx.gxwqb.cn
+```
+
+The Composer stabilization step is fixed and non-interactive:
+
+```bash
+composer dump-autoload --working-dir <staged-backend> \
+  --no-dev --optimize --no-scripts --no-interaction
+```
+
+### 3. Contracts
+
+- A clean, pushed `main` commit built twice from the same locked dependencies
+  must produce byte-identical `tar.gz` files and identical
+  `release-manifest.json` files.
+- The release must not contain any path component named `.git`, `.hg`, or
+  `.svn`. A VCS marker that is a file or symlink is an error, not something to
+  follow or silently package.
+- ThinkPHP `vendor/services.php` may be normalized only when its known generated
+  header matches; its time is replaced with the Git commit time in UTC. Unknown
+  headers fail the build.
+- Admin/store's single `css/app.<8hex>.css` entry is renamed from its unstable
+  Webpack name to `css/app.<full-content-sha256>.css`. `index.html` must contain
+  exactly one preload and one stylesheet reference to that entry. JS and other
+  chunks are unchanged.
+- Composer's second autoload dump runs after install but before scanning and
+  manifest generation. `--no-scripts` must keep service discovery and PHP 8.3
+  patch hooks from running twice; `--no-interaction` must prevent root prompts.
+- Tar entries are sorted and use fixed uid/gid, owner names, commit mtime, and
+  zero gzip mtime. Shared `.env`, uploads, payment files, runtime, and production
+  data remain outside the archive.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| No or multiple admin/store entry CSS files | Refuse the build |
+| Entry CSS is a symlink, directory, or escapes the app root | Refuse without following it |
+| HTML lacks either exact entry-CSS link or has extra references | Refuse the build |
+| Content-addressed CSS target already exists | Refuse; do not overwrite |
+| Index replacement fails after CSS rename | Restore the original CSS name and fail |
+| Nested real VCS directory | Remove before scanning/manifest |
+| VCS marker is a file/symlink or resolves outside stage | Refuse the build |
+| ThinkPHP services header is unknown | Refuse without modifying the file |
+| Composer asks for input | Treat as a command failure; never wait interactively |
+| Two same-commit package or manifest hashes differ | Release acceptance fails; compare manifests before deployment |
+
+### 5. Good / Base / Bad Cases
+
+- **Good:** two complete builds of one pushed commit have the same package and
+  manifest SHA-256; both admin/store CSS URLs are content-addressed.
+- **Base:** a new commit legitimately changes source or CSS, creating a new
+  release ID and a new content-addressed CSS URL.
+- **Bad:** accepting a package merely because both builds have the same release
+  ID while their SHA-256 values differ.
+- **Bad:** fixing nondeterminism by using a permanent `app.css` URL, which would
+  preserve stale browser/CDN caches after CSS content changes.
+
+### 6. Tests Required
+
+- Unit tests must assert VCS removal, symlink/file rejection, stage-boundary
+  enforcement, known/unknown ThinkPHP headers, and idempotent UTC normalization.
+- Frontend-entry tests must assert same-content convergence, content-change URL
+  invalidation, exact two-link rewriting, collision rejection, and failed-write
+  rollback.
+- Build orchestration tests must assert install -> non-interactive script-free
+  autoload dump -> normalization -> scans -> manifest order.
+- Before changing deterministic assembly, preserve the first real package, run a
+  second full `build --fetch`, and assert package SHA, manifest SHA, entry CSS
+  paths, and nested-VCS count.
+
+### 7. Wrong vs Correct
+
+```text
+Wrong: build twice -> release IDs match -> deploy despite different package SHA.
+Correct: build twice -> package and manifest SHA both match -> deploy the reviewed package.
+
+Wrong: composer dump-autoload --no-scripts
+Correct: composer dump-autoload --no-dev --optimize --no-scripts --no-interaction
+```
