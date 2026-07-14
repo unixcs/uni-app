@@ -30,7 +30,11 @@ install -d -o deployer -g deployer -m 0700 /home/deployer/.ssh
 [[ -s /root/.ssh/authorized_keys ]] || { echo 'Root authorized_keys is missing.' >&2; exit 1; }
 install -o deployer -g deployer -m 0600 /root/.ssh/authorized_keys /home/deployer/.ssh/authorized_keys
 
-install -d -o root -g www-data -m 0750 /srv/yoshop /srv/yoshop/releases /srv/yoshop/state
+# The deployer needs traverse-only access to reach its owned incoming directory.
+# Child directories keep their own stricter ownership; 0711 does not allow
+# listing or reading shared/release data.
+install -d -o root -g www-data -m 0711 /srv/yoshop
+install -d -o root -g www-data -m 0750 /srv/yoshop/releases /srv/yoshop/state
 install -d -o deployer -g www-data -m 0750 /srv/yoshop/incoming
 install -d -o root -g www-data -m 0750 /srv/yoshop/shared /srv/yoshop/shared/payment /srv/yoshop/shared/logs
 install -d -o www-data -g www-data -m 0770 /srv/yoshop/shared/uploads /srv/yoshop/shared/runtime
