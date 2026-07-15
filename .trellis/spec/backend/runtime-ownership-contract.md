@@ -47,7 +47,7 @@ scripts/systemd/yoshop2.0-timer-local-override.conf
 
 - **Good:** Run `repair-local-runtime.sh --clear-cache`; local admin and mini-program API requests return business responses, and runtime logs contain no file-write exception.
 - **Base:** Run without flags after a permissions drift; cache content is preserved while ownership and writeability are repaired.
-- **Bad:** Run `rm -rf /opt/yoshop/yoshop2.0/runtime/*` and restart services without rebuilding ownership. This can leave `root:root 0755` parents that PHP-FPM cannot extend.
+- **Bad:** Delete all runtime contents directly and restart services without rebuilding ownership. This can leave `root:root 0755` parents that PHP-FPM cannot extend.
 - **Bad:** Let Timer run as root while PHP-FPM runs as `www-data`; direct `file_put_contents` can fail when either identity creates the file first.
 
 ### 6. Tests Required
