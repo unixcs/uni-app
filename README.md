@@ -75,6 +75,29 @@
 - 生产环境上线前确认 `yoshop2.0/public/admin` 与 `yoshop2.0/public/store` 已有编译产物
 - `yoshop2.0/public/uploads` 与 `yoshop2.0/runtime` 必须对 `php-fpm` 运行用户可写，推荐所有者为 `www-data:www-data`
 
+### WSL 本地 runtime 修复
+
+本地 Nginx、PHP-FPM 和 Timer 应统一使用 `www-data` 写运行时文件。首次配置执行：
+
+```bash
+sudo apt-get install -y acl
+sudo install -D -m 0644 \
+  /opt/yoshop/scripts/systemd/yoshop2.0-timer-local-override.conf \
+  /etc/systemd/system/yoshop2.0-timer.service.d/local-runtime-user.conf
+sudo systemctl daemon-reload
+sudo systemctl restart yoshop2.0-timer.service
+/opt/yoshop/scripts/repair-local-runtime.sh
+```
+
+以后需要清 ThinkPHP 缓存时，不要直接删除整个 `runtime`，统一执行：
+
+```bash
+/opt/yoshop/scripts/repair-local-runtime.sh --clear-cache
+sudo systemctl restart php8.3-fpm
+```
+
+该脚本只处理 Git 工作区中的本地 runtime，拒绝生产环境使用的 runtime 软链接，也不会触碰 `.env` 或上传文件。
+
 如需后台前端，也可分别安装并编译：
 
 - `yoshop2.0-store`

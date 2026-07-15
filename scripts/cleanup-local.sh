@@ -116,6 +116,10 @@ remove_target() {
 
 printf 'YoShop cleanup root: %s\n' "$repo_root"
 if (( apply )); then
+  [[ -x "$script_dir/repair-local-runtime.sh" ]] || {
+    echo 'Refusing cleanup: runtime repair helper is missing or not executable.' >&2
+    exit 1
+  }
   echo 'Mode: APPLY'
 else
   echo 'Mode: DRY-RUN (nothing will be deleted)'
@@ -154,6 +158,9 @@ if (( deep )); then
 fi
 
 if (( apply )); then
+  # runtime is generated and was removed above. Recreate it with the actual
+  # PHP-FPM identity so local admin/API requests keep working after cleanup.
+  "$script_dir/repair-local-runtime.sh"
   echo 'Cleanup complete. Dependencies, private data and local public build were preserved.'
 else
   echo 'Dry-run complete. Re-run with --apply after reviewing this list.'

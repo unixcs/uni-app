@@ -14,7 +14,7 @@
 
 ### 1. 后端服务重启（WSL 内）
 ```bash
-rm -rf /opt/yoshop/yoshop2.0/runtime/*
+/opt/yoshop/scripts/repair-local-runtime.sh --clear-cache
 systemctl restart php8.3-fpm nginx
 ```
 结果：`php8.3-fpm` / `nginx` 均 `active`，`Payment.php` 修复仍在位（命中 3 处 `PAID_PENDING_DELIVERY`）。
