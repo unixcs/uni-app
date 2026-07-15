@@ -1,5 +1,7 @@
 # yoshop monorepo
 
+> AI 开发与小改动分流：先阅读 [YoShop AI 开发完整使用说明书](docs/ai-development-manual.md)，快速定位见 [系统地图](docs/architecture/system-map.md)。
+
 ## 仓库说明
 
 本仓库用于保存一个可重新部署、可继续二开的 yoshop 

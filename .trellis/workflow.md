@@ -9,6 +9,8 @@
 3. **Persist everything** — research, decisions, and lessons all go to files; conversations get compacted, files don't
 4. **Incremental development** — one task at a time
 5. **Capture learnings** — after each task, review and write new knowledge back to spec
+6. **Route before loading** — identify the owning package before reading detailed specs or source
+7. **Match ceremony to risk** — use Fast Fix for explicit low-risk local edits; escalate on evidence
 
 ---
 
@@ -151,7 +153,9 @@ Phase 3: Finish  → verify, update spec, commit, and wrap up
 
 ### Request Triage
 
-- Simple conversation or small task: ask only whether this turn should create a Trellis task. If the user says no, skip Trellis for this session.
+- **Explicit Fast Fix**: when the user says “快速修复 / 小改动 / 不建任务 / fast fix” and the change is local, reversible, single-package, contract-neutral, and expected to touch at most 1–3 source files, load `yoshop-fast-fix` and skip Trellis task creation. This is an explicit opt-in, not a guess based only on apparent size.
+- **Fast Fix forbidden**: payment/refund/order-state, auth/permission/security, database/schema/data repair, production config/deploy, cross-package contracts, or unclear root cause must enter Trellis planning instead. Evidence discovered during a Fast Fix must upgrade the flow immediately.
+- Simple conversation or an unclassified small task: ask only whether this turn should create a Trellis task. If the user says no, skip Trellis for this session.
 - Complex task: ask whether you may create a Trellis task and enter planning. If the user says no, do not do broad inline implementation; explain, clarify scope, or suggest a smaller split.
 - User approval to create a task is not approval to start implementation. Planning still happens first.
 
@@ -174,9 +178,10 @@ Create new children with `task.py create "<title>" --slug <name> --parent <paren
 <!-- Per-turn breadcrumb: shown when there is no active task (before Phase 1) -->
 
 [workflow-state:no_task]
-No active task. First classify the current turn and ask for task-creation consent before creating any Trellis task.
-Simple conversation / small task: ask only whether this turn should create a Trellis task. If the user says no, skip Trellis for this session.
-Complex task: ask the user if you can create a Trellis task and enter the planning phase. If the user says no, explain, clarify scope, or suggest a smaller split.
+No active task. Classify before creating anything.
+Explicit low-risk “快速修复 / 小改动 / 不建任务 / fast fix”: load `yoshop-fast-fix`, skip task creation, start in one package, and upgrade to Trellis planning on any risk/evidence trigger.
+Payment/refund/order-state, auth/permission/security, DB/data repair, production/deploy, cross-package contracts, or unclear root cause are never Fast Fix.
+Other simple conversation / small task: ask only whether this turn should create a Trellis task. Complex task: ask for task-creation consent and enter planning.
 [/workflow-state:no_task]
 
 ### Phase 1: Plan

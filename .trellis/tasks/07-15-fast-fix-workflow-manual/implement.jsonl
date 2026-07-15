@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/workflow.md", "reason": "本地 Fast Fix 路由与 Trellis 状态契约"}
+{"file": ".trellis/config.yaml", "reason": "monorepo package 与 spec_scope 配置"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "现有前端规范入口与兼容链接"}
+{"file": ".trellis/spec/backend/index.md", "reason": "现有后端规范入口与兼容链接"}

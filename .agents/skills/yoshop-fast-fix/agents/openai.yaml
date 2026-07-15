@@ -1,0 +1,4 @@
+interface:
+  display_name: "YoShop 快速修复"
+  short_description: "单包精确定位、最小修改、证据触发升级的低风险修复流程"
+  default_prompt: "Use $yoshop-fast-fix for this explicit low-risk YoShop change without creating a Trellis task."

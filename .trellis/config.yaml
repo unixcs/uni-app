@@ -58,23 +58,25 @@ max_journal_lines: 2000
 # Trellis auto-detects workspaces during `trellis init`, but you can also
 # configure them manually here.
 #
-# packages:
-#   frontend:
-#     path: packages/frontend
-#   backend:
-#     path: packages/backend
-#   docs:
-#     path: docs-site
-#     type: submodule
-#   # For polyrepo / meta-repo layouts (independent .git in each subdir),
-#   # mark the package with `git: true`. The runtime treats it as an
-#   # independent repository for things like git-context display.
-#   webapp:
-#     path: ./webapp
-#     git: true
+# This repository is a monorepo of independently routable applications.
+# Do not set a default_package: an unspecified task must not silently inherit
+# the wrong business application. New scoped tasks should pass --package.
+packages:
+  backend:
+    path: yoshop2.0
+  miniapp:
+    path: yoshop2.0-uniapp
+  merchant-console:
+    path: yoshop2.0-store
+  admin-console:
+    path: yoshop2.0-admin
+  deployment:
+    path: deploy
 
-# Default package used when --package is not specified.
-# default_package: frontend
+# Limit package-spec discovery to the active task when that task declares a
+# package. Legacy/cross-cutting tasks without a package retain all-package view.
+session:
+  spec_scope: active_task
 
 #-------------------------------------------------------------------------------
 # Channel worker OOM guard
