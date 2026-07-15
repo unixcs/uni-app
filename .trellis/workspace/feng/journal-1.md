@@ -353,3 +353,39 @@ Closed the feedback/complaint MVP and homepage popup/privacy singleton content t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 修复 WSL runtime 缓存权限漂移
+
+**Date**: 2026-07-15
+**Task**: 修复 WSL runtime 缓存权限漂移
+**Branch**: `main`
+
+### Summary
+
+统一本地 PHP-FPM 与 Timer 的 www-data 运行身份，增加 runtime 修复脚本、清理后自动恢复、生产软链接保护和回归测试；A 域名后台与小程序登录路径不再出现 file_put_contents 权限错误，未发布腾讯云。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0f3a695` | (see git log) |
+| `4eea9b4` | (see git log) |
+| `0abf433` | (see git log) |
+| `3af38f6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
