@@ -2,6 +2,8 @@
 
 > AI 开发与小改动分流：先阅读 [YoShop AI 开发完整使用说明书](docs/ai-development-manual.md)，快速定位见 [系统地图](docs/architecture/system-map.md)。
 
+> 日常交付必须先在 WSL 本地上线并由用户验收，再推送 GitHub，最后另行授权腾讯云生产发布。完整步骤见 [WSL 本地验证与腾讯云生产上线工作流](WSL本地验证与腾讯云生产上线工作流.md)。
+
 ## 仓库说明
 
 本仓库用于保存一个可重新部署、可继续二开的 yoshop 
@@ -74,10 +76,12 @@
 - `.env` 中 `APP_URL` 与线上域名保持一致
 - 数据库账号使用独立生产账号，不要留占位符
 - Redis 默认只监听本机回环地址，除非已做好 ACL / 内网隔离
-- 生产环境上线前确认 `yoshop2.0/public/admin` 与 `yoshop2.0/public/store` 已有编译产物
+- WSL 本地验收时将后台 `dist` 同步到本地 `yoshop2.0/public/admin|store`；腾讯云发布由 guarded release builder 自动把本地 `dist` 装入不可变发布包，不提交这些生成目录
 - `yoshop2.0/public/uploads` 与 `yoshop2.0/runtime` 必须对 `php-fpm` 运行用户可写，推荐所有者为 `www-data:www-data`
 
 ### WSL 本地 runtime 修复
+
+> 本节只处理 PHP runtime 权限和缓存，不是完整的 WSL 本地上线流程。前端构建/同步、本地数据库变更、人工验收和 Git/腾讯云授权顺序见 [完整工作流](WSL本地验证与腾讯云生产上线工作流.md)。
 
 本地 Nginx、PHP-FPM 和 Timer 应统一使用 `www-data` 写运行时文件。首次配置执行：
 

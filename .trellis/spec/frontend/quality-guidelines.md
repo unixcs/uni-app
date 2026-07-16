@@ -56,7 +56,7 @@ npm run build:mp-weixin:prod  # wx.gxwqb.cn, production artifact only
 
 The build must keep the WSL and Windows-mirror source `config.js` on domain A
 after completion while the compiled artifact contains only the selected domain.
-The guarded mirror sentinel is mandatory before any `rsync --delete`.
+The guarded Windows-mirror sentinel is mandatory before `rsync --delete` targets the Windows mini-program mirror; fixed WSL `public/` acceptance sync follows the local workflow and must never target production.
 Use H5/manual verification only when the touched flow requires it.
 
 ### Cross-layer / backend-adjacent changes
@@ -86,7 +86,12 @@ Before finalizing a frontend task, confirm:
 
 ## Merchant Console Deployment Contract
 
-A successful `yoshop2.0-store/dist` build is **not** a production deployment.
+A successful `yoshop2.0-store/dist` build is neither WSL local deployment nor
+production deployment. Before GitHub push, sync `dist/` to the ignored WSL local
+`yoshop2.0/public/store/`, verify the actual local HTTP bundle, and obtain the
+user's explicit manual acceptance according to
+[`WSL本地验证与腾讯云生产上线工作流.md`](../../../WSL本地验证与腾讯云生产上线工作流.md).
+
 Production Nginx serves `/srv/yoshop/current/yoshop2.0/public/store`; the guarded
 release builder copies local `dist` into an immutable package and the remote
 executor atomically switches `current`:
@@ -102,8 +107,9 @@ cd /opt/yoshop
 Required evidence: the package manifest contains `public/store/index.html` and
 its hashed bundles, `/store/` returns that index after activation, and the actual
 HTTP JS bundle contains the expected feature marker. Restarting PHP-FPM cannot
-publish Vue assets. Do not manually rsync generated output into a mutable app
-folder or commit it as a deployment artifact.
+publish Vue assets. Local WSL acceptance may sync into the ignored local
+`public/store`; never manually rsync generated output into a mutable Tencent
+production app folder or commit it as a deployment artifact.
 
 ## Deterministic Release Package Contract
 

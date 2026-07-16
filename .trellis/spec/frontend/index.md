@@ -36,7 +36,7 @@ Before marking a frontend task done:
 2. Check for cross-layer drift: API field names, enum values, route paths, menu permissions, and exported columns must all stay aligned.
 3. Confirm no placeholder Trellis text or speculative conventions were introduced.
 4. If you changed a shared contract, update the corresponding spec doc in the same task.
-5. If you changed merchant static deployment output (`yoshop2.0/public/store`), treat that as a separate deploy-style commit.
+5. WSL local acceptance may regenerate ignored `yoshop2.0/public/store`, but it remains deployment output: never stage it; production packaging copies the reviewed `yoshop2.0-store/dist` through the guarded release workflow.
 
 ## Guidelines Index
 
