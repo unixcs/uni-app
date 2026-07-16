@@ -156,7 +156,7 @@ class Auth
     }
 
     /**
-     * 是否为旧版物理商品发货API
+     * 是否为旧版实物订单API
      * @param string $url
      * @return bool
      */

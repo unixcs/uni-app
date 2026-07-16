@@ -352,3 +352,72 @@ The UI must not infer risk from device type, elapsed time, screenshots, truthy s
 - [ ] Is `gamePlatform` filtered independently from keyword search?
 - [ ] Does the cleanup command require `--before-time` and default to `dry-run`?
 - [ ] Does cleanup mutate only `is_delete`, never physically delete rows?
+
+## Scenario: merchant service-action authorization
+
+### 1. Scope / Trigger
+
+Use this contract whenever a merchant-console service action, order action permission, or `store_menu` / `store_api` migration changes. It applies across merchant role menus, backend route authorization, and order-detail button visibility.
+
+### 2. Signatures
+
+```text
+menu capability namespace: /order/tools
+start action:                /order/tools.startService
+complete action:             /order/tools.completeService
+pre-service refund action:   /order/tools.refundBeforeService
+
+backend routes:
+/order.event/startService
+/order.event/completeService
+/order.event/refundBeforeService
+
+production migration path:
+deploy/migrations/NNNN_description.sql
+```
+
+### 3. Contracts
+
+- `$auth()` consumes `<menu path>.<action_mark>`; it does not consume a backend API URL. A string such as `/order.event/startService` is therefore not a valid frontend action permission key.
+- Each service action is a separate type-20 child under `订单处理` (`menu_id=10201`) and maps one-to-one to its exact backend API URL through `store_menu_api`.
+- Backend `Auth::checkPrivilege()` remains authoritative. Hiding a button is UX, not access control.
+- Business-state flags (`can_start_service`, `can_complete_service`, `can_refund_before_service`) and role authorization are both required before the frontend exposes an action.
+- Existing-role migration grants the new actions only to `(store_id, role_id)` pairs that already own 10201. Order viewers are not implicitly promoted.
+- Persistent permission changes ship only through idempotent numbered files in `deploy/migrations/`; scripts under `yoshop2.0/数据库修改记录/` are not production release migrations.
+- Obsolete physical-order rows remain dormant for one-release rollback compatibility; runtime filters remove them from current role trees and backend access sets.
+
+### 4. Validation & Error Matrix
+
+| Condition | Frontend | Backend |
+|---|---|---|
+| action menu granted and business flag true | show action | allow exact route |
+| action menu missing | hide action | reject direct request with no-API-access error |
+| action granted but business flag false | hide action | state machine rejects forged/late request |
+| role owns order detail only | view detail, no service action | reject service routes |
+| role owned 10201 before migration | receive all three actions once | allow according to order state |
+| migration not yet applied but stale physical rows exist | runtime filters hide obsolete capabilities | obsolete API URLs excluded from access set |
+
+### 5. Good / Base / Bad Cases
+
+- **Good:** `guanxing` inherits the three service actions through an existing order-processing role, sees only state-valid buttons, and each direct route passes backend authorization.
+- **Base:** a customer-service viewer can open order detail but has no service action until an administrator explicitly assigns it.
+- **Bad:** whitelist service routes globally, map them to broad order-detail access, or preserve `deliver/cancel` fallbacks.
+- **Bad:** add controller methods and buttons without `store_api`, `store_menu_api`, and deploy-migration records.
+
+### 6. Tests Required
+
+1. Migration integration runs twice against copied permission tables and asserts three unique menus, APIs, mappings, and no duplicate role grants.
+2. The role matrix proves only pre-existing 10201 owners are backfilled and a view-only role is not.
+3. Frontend contract tests assert `/order/tools.<action>` keys and reject API-URL-shaped or legacy fallback keys.
+4. Backend defensive constants and migration cleanup lists contain the same obsolete menu/API IDs and route families.
+5. Changed PHP files pass `php -l`; merchant order detail passes focused lint and a production build.
+
+### 7. Wrong vs Correct
+
+```text
+Wrong: $auth('/order.event/startService') || $auth('/order/list/all.deliver')
+Correct: $auth('/order/tools.startService')
+
+Wrong: manual SQL under yoshop2.0/数据库修改记录/
+Correct: idempotent deploy/migrations/NNNN_description.sql with release backup/checksum tracking
+```

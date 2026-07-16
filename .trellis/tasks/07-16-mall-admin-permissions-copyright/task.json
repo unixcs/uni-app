@@ -1,0 +1,29 @@
+{
+  "id": "mall-admin-permissions-copyright",
+  "name": "mall-admin-permissions-copyright",
+  "title": "修复商城后台权限并移除版权",
+  "description": "排查并修复服务订单后台操作权限，精简旧实物订单权限菜单，并彻底移除商家后台页脚版权声明",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "feng",
+  "assignee": "feng",
+  "createdAt": "2026-07-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-16-service-order-permissions",
+    "07-16-remove-merchant-copyright"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

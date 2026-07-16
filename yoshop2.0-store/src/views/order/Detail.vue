@@ -270,13 +270,13 @@ export default {
       return !!this.backendActionFlags.can_refund_before_service
     },
     canUseStartServiceAction () {
-      return this.$auth('/order.event/startService') || this.$auth('/order/list/all.deliver')
+      return this.$auth('/order/tools.startService')
     },
     canUseCompleteServiceAction () {
-      return this.$auth('/order.event/completeService') || this.$auth('/order/list/all.deliver')
+      return this.$auth('/order/tools.completeService')
     },
     canUseRefundBeforeServiceAction () {
-      return this.$auth('/order.event/refundBeforeService') || this.$auth('/order/list/all.cancel')
+      return this.$auth('/order/tools.refundBeforeService')
     },
     isIosAppleRefundMode () {
       return !!(this.backendActionFlags.ios_apple_refund_required || this.virtualPaymentSummary.ios_apple_refund_required)

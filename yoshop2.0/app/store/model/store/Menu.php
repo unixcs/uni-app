@@ -30,7 +30,7 @@ class Menu extends MenuModel
     ];
 
     /**
-     * 过滤旧版物理商品发货菜单
+     * 过滤旧版实物订单菜单
      * @param $menuList
      * @param int $parentId
      * @return array

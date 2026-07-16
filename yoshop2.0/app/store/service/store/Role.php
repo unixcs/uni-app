@@ -42,7 +42,7 @@ class Role extends BaseService
         $userInfo = UserService::getLoginInfo();
         // 根据当前用户ID获取有权限的菜单列表
         $permittedMenuList = static::getPermittedMenuList((int)$userInfo['user']['store_user_id']);
-        // 兜底过滤旧版物理商品发货菜单
+        // 兜底过滤旧版实物订单菜单
         $permittedMenuList = static::filterLegacyDeliveryMenus($permittedMenuList);
         // 生成权限列表
         $permissions = static::buildPermissions($permittedMenuList);
@@ -97,7 +97,7 @@ class Role extends BaseService
     }
 
     /**
-     * 过滤旧版物理商品发货菜单
+     * 过滤旧版实物订单菜单
      * @param array $menuList
      * @return array
      */
@@ -118,19 +118,20 @@ class Role extends BaseService
     }
 
     /**
-     * 是否为旧版物理商品发货菜单
+     * 是否为旧版实物订单菜单
      * @param array $menu
      * @return bool
      */
     private static function isLegacyDeliveryMenu(array $menu): bool
     {
-        if (in_array($menu['name'] ?? '', ['发货管理', '待发货', '待收货'], true)) {
+        if (in_array($menu['name'] ?? '', ['发货', '确认收货', '订单导出', '发货管理', '批量发货', '发货记录', '待发货', '待收货'], true)) {
             return true;
         }
         $path = (string)($menu['path'] ?? '');
         return $path !== '' && (
             str_starts_with($path, '/order/delivery')
             || str_starts_with($path, '/order/tools/delivery')
+            || str_starts_with($path, '/order/tools/export')
         );
     }
 

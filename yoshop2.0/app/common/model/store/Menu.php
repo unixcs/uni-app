@@ -30,34 +30,34 @@ class Menu extends BaseModel
     protected $pk = 'menu_id';
 
     /**
-     * 旧版物理商品发货菜单ID集
+     * 旧版实物订单菜单ID集
      * @return array
      */
     public static function getLegacyDeliveryMenuIds(): array
     {
-        return [10238, 10239, 10240, 10241, 10242];
+        return [10052, 10059, 10202, 10203, 10238, 10239, 10240, 10241, 10242];
     }
 
     /**
-     * 旧版物理商品发货菜单名称集
+     * 旧版实物订单菜单名称集
      * @return array
      */
     public static function getLegacyDeliveryMenuNames(): array
     {
-        return ['发货管理', '待发货', '待收货'];
+        return ['发货', '确认收货', '订单导出', '发货管理', '批量发货', '发货记录', '待发货', '待收货'];
     }
 
     /**
-     * 旧版物理商品发货菜单路由前缀
+     * 旧版实物订单菜单路由前缀
      * @return array
      */
     public static function getLegacyDeliveryMenuPathPrefixes(): array
     {
-        return ['/order/delivery', '/order/tools/delivery'];
+        return ['/order/delivery', '/order/tools/delivery', '/order/tools/export'];
     }
 
     /**
-     * 是否为旧版物理商品发货菜单
+     * 是否为旧版实物订单菜单
      * @param array $menu
      * @return bool
      */

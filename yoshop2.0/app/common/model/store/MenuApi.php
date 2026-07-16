@@ -33,21 +33,21 @@ class MenuApi extends BaseModel
     protected bool $isGlobalScopeStoreId = false;
 
     /**
-     * 旧版物理商品发货API路径前缀
+     * 旧版实物订单API路径前缀
      * @return array
      */
     public static function getLegacyDeliveryApiPrefixes(): array
     {
-        return ['/order.delivery', '/order.tools.delivery'];
+        return ['/order.delivery', '/order.tools.delivery', '/order.export', '/order.refund/receipt'];
     }
 
     /**
-     * 旧版物理商品发货API ID集
+     * 旧版实物订单API ID集
      * @return array
      */
     public static function getLegacyDeliveryApiIds(): array
     {
-        return [11318, 11319, 11320, 11321, 11322, 11367];
+        return [11088, 11266, 11267, 11268, 11318, 11319, 11320, 11321, 11322, 11323, 11367];
     }
 
 }
